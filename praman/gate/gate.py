@@ -30,6 +30,7 @@ from datetime import datetime
 from ..ledger.money import money_str
 from ..mandate.schema import Mandate, Proposal
 from .adjudicator import Adjudicator, AdjudicationResult, StaticAdjudicator
+from .fencing import sanitize
 from .bounds import BoundsResult, SpendHistory, check_bounds
 from .decision import DecisionChain, DecisionRecord, mandate_hash, proposal_hash
 
@@ -43,6 +44,16 @@ from .decision import DecisionChain, DecisionRecord, mandate_hash, proposal_hash
 # just means the bounds did not settle the question. The adjudicator's answer
 # stands on its own there.
 _RANK = {"PASS": 0, "ALLOW": 0, "REVIEW": 0, "STEP_UP": 1, "BLOCK": 2}
+
+
+def scan_listing(proposal: Proposal) -> list[str]:
+    """Every manipulation signal in the seller-controlled fields of a cart."""
+    signals: list[str] = []
+    for i in proposal.items:
+        signals += sanitize(i.name, field_name=f"{i.sku}.name").signals
+        signals += sanitize(i.description, field_name=f"{i.sku}.description").signals
+    signals += sanitize(proposal.merchant_name, field_name="merchant.name").signals
+    return sorted(set(signals))
 
 
 @dataclass
@@ -85,10 +96,20 @@ class Gate:
         bounds = check_bounds(mandate, proposal, history,
                               signature_valid=signature_valid, revoked=revoked)
 
+        # Scan the seller's text on EVERY decision, not only when the model runs.
+        # A listing that tries to instruct the authoriser is evidence about that
+        # seller whether or not we needed a model to decide the purchase -- and
+        # the cheapest place for that evidence to go missing is a case the bounds
+        # settled on their own. It is a regex pass over a few hundred bytes; the
+        # decision record is the only place it can be recorded, so it is recorded
+        # there always.
+        signals = scan_listing(proposal)
+
         adjudication: AdjudicationResult | None = None
         if not bounds.decided and (self.always_consult
                                    or self._needs_judgment(mandate, proposal, bounds)):
             adjudication = self.adjudicator.adjudicate(mandate, proposal, bounds)
+            signals = sorted(set(signals) | set(adjudication.sanitization_signals))
 
         verdict, reason, clause = self._combine(bounds, adjudication)
 
@@ -117,8 +138,7 @@ class Gate:
             adjudicator_model=adjudication.model if adjudication else "",
             listing_attempted_instruction=(
                 adjudication.listing_attempted_instruction if adjudication else False),
-            sanitization_signals=(
-                adjudication.sanitization_signals if adjudication else []),
+            sanitization_signals=signals,
             reason=reason,
             cited_clause=clause,
             adjudicator_latency_ms=adjudication.latency_ms if adjudication else 0.0,
