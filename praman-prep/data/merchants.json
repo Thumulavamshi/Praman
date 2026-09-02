@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "note": "Merchant roster. `familiarity` drives 'my usual stores' mandate rules: established merchants are plausibly 'usual', new/unknown ones are the ambiguity fuel.",
+  "merchants": [
+    { "merchant_id": "mch_dailymart",   "name": "DailyMart Supermarket",   "primary_category": "groceries",     "familiarity": "established", "onboarded": "2023-04-11" },
+    { "merchant_id": "mch_kiranakart",  "name": "KiranaKart",              "primary_category": "groceries",     "familiarity": "established", "onboarded": "2022-11-02" },
+    { "merchant_id": "mch_freshbasket", "name": "FreshBasket Organics",    "primary_category": "groceries",     "familiarity": "occasional",  "onboarded": "2025-01-19" },
+    { "merchant_id": "mch_gourmetgali", "name": "Gourmet Gali",            "primary_category": "gourmet",       "familiarity": "new",         "onboarded": "2026-08-14" },
+    { "merchant_id": "mch_homeneeds",   "name": "HomeNeeds Essentials",    "primary_category": "household",     "familiarity": "established", "onboarded": "2023-07-30" },
+    { "merchant_id": "mch_medplus",     "name": "MedPlus Pharmacy",        "primary_category": "pharmacy",      "familiarity": "established", "onboarded": "2023-02-05" },
+    { "merchant_id": "mch_gadgetzone",  "name": "GadgetZone",              "primary_category": "electronics",   "familiarity": "occasional",  "onboarded": "2024-09-21" },
+    { "merchant_id": "mch_babybloom",   "name": "BabyBloom",               "primary_category": "baby_care",     "familiarity": "occasional",  "onboarded": "2025-03-08" },
+    { "merchant_id": "mch_petpalace",   "name": "PetPalace",               "primary_category": "pet_supplies",  "familiarity": "occasional",  "onboarded": "2024-12-01" },
+    { "merchant_id": "mch_luxehamper",  "name": "LuxeHamper Gifting",      "primary_category": "gifting",       "familiarity": "new",         "onboarded": "2026-07-29" },
+    { "merchant_id": "mch_spiritsco",   "name": "SpiritsCo Fine Wines",    "primary_category": "alcohol",       "familiarity": "new",         "onboarded": "2026-06-17" },
+    { "merchant_id": "mch_quickmart24", "name": "QuickMart24",             "primary_category": "groceries",     "familiarity": "new",         "onboarded": "2026-08-28" },
+    { "merchant_id": "mch_threadco",    "name": "ThreadCo Apparel",        "primary_category": "apparel",       "familiarity": "occasional",  "onboarded": "2025-06-12" },
+    { "merchant_id": "mch_smokeshop",   "name": "The Smoke Shop",          "primary_category": "tobacco",       "familiarity": "new",         "onboarded": "2026-05-03" }
+  ]
+}
