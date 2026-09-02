@@ -1,0 +1,9 @@
+[project]
+name = "praman"
+version = "0.1.0"
+description = "Verification-native trust layer that makes a merchant safely transactable by an AI buyer."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error::DeprecationWarning:praman.*"]
