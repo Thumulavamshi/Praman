@@ -47,10 +47,40 @@ def test_a_bounds_block_never_reaches_the_model():
     """Asking would only expose a correct answer to an injection."""
     rec = Recorder()
     g = Gate(adjudicator=rec)
-    for p in [prop("2400.00"), prop("500.00", "alcohol"),
-              prop("500.00", "apparel")]:
+    for p in [prop("2400.00"), prop("500.00", "alcohol")]:
         assert g.decide(MANDATE, p).verdict == "BLOCK"
     assert rec.calls == 0
+
+
+def test_a_denied_category_is_hard_but_a_missing_allowed_category_is_not():
+    """The two lists are different kinds of thing and are enforced differently.
+
+    `categories_denied` is what the person refused in their own words: hard,
+    final, never shown to the model. `categories_allowed` was compiled from
+    natural language onto a fixed taxonomy, so a miss is a mismatch to weigh --
+    the taxonomy's boundaries are not commitments the person made.
+    """
+    denied = Recorder()
+    assert Gate(adjudicator=denied).decide(
+        MANDATE, prop("500.00", "alcohol")).verdict == "BLOCK"
+    assert denied.calls == 0
+
+    missing = Recorder("ALLOW")
+    out = Gate(adjudicator=missing).decide(MANDATE, prop("500.00", "apparel"))
+    assert missing.calls == 1
+    assert out.verdict == "ALLOW"
+    assert any(f["code"] == "category_not_allowed" and f["verdict"] == "REVIEW"
+               for f in out.decision.bounds_findings)
+
+
+def test_a_review_with_no_adjudicator_fails_closed_to_a_human():
+    """An open question must never be resolved by default."""
+    from praman.gate.bounds import check_bounds
+    from praman.gate.gate import Gate as G
+    g = G(adjudicator=Recorder())
+    g._needs_judgment = lambda *a: False          # simulate the model unavailable
+    out = g.decide(MANDATE, prop("500.00", "apparel"))
+    assert out.verdict == "STEP_UP"
 
 
 def test_an_ordinary_in_scope_purchase_does_not_pay_for_a_model_call():

@@ -39,7 +39,10 @@ from .decision import DecisionChain, DecisionRecord, mandate_hash, proposal_hash
 # distinct is deliberate: "the bounds passed" and "this is in scope" are
 # different claims and a decision record that conflated them would be harder to
 # read back in a dispute, not easier.
-_RANK = {"PASS": 0, "ALLOW": 0, "STEP_UP": 1, "BLOCK": 2}
+# REVIEW ranks with PASS: a review finding imposes no caution of its own, it
+# just means the bounds did not settle the question. The adjudicator's answer
+# stands on its own there.
+_RANK = {"PASS": 0, "ALLOW": 0, "REVIEW": 0, "STEP_UP": 1, "BLOCK": 2}
 
 
 @dataclass
@@ -131,6 +134,9 @@ class Gate:
         """Is this case semantically open, or did the bounds settle it?
 
         Consult the model when any of these hold:
+          - a bound came back REVIEW, meaning the checker found something it is
+            not entitled to decide alone -- a category outside the compiled
+            allowed list, which the taxonomy calls a miss and a person might not
           - the mandate carries soft constraints the compiler could not reduce
             to a bound ("my usual stores", "keep it sensible")
           - the merchant is new or unknown, which is what "usual stores" turns on
@@ -141,6 +147,8 @@ class Gate:
         Everything else is an ordinary in-scope purchase and does not need a
         model to say so. This is the latency argument made concrete.
         """
+        if bounds.reviews:
+            return True
         if mandate.scope.soft_constraints:
             return True
         if proposal.merchant_familiarity in ("new", "unknown"):
@@ -161,6 +169,13 @@ class Gate:
         if adj is None:
             if bounds.verdict == "STEP_UP":
                 f = bounds.step_ups[0]
+                return "STEP_UP", f.detail, f.clause
+            if bounds.verdict == "REVIEW":
+                # The checker declined to decide and nobody else did either.
+                # Fail closed to a human rather than resolving an open question
+                # by default -- a default that resolves open questions is a
+                # default that eventually resolves one wrongly.
+                f = bounds.reviews[0]
                 return "STEP_UP", f.detail, f.clause
             return ("ALLOW",
                     "within every bound the mandate sets, and not a case that "

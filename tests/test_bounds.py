@@ -51,8 +51,29 @@ def test_a_denied_category_blocks_and_a_block_is_final():
     assert "denied_category" in codes(r)
 
 
-def test_a_category_outside_the_allowed_list_blocks():
-    assert "category_not_allowed" in codes(check_bounds(REFERENCE, prop("500.00", "apparel")))
+def test_a_category_outside_the_allowed_list_is_referred_not_blocked():
+    """The allowed list is a compiled inference, so a miss is not a hard bound.
+
+    Measurement caught this: a mandate whose own source text said "delivery
+    charges are fine" was blocking its own delivery charge, because a delivery
+    fee is registered under `services`. The checker states the mismatch and the
+    adjudicator decides what the person meant.
+    """
+    r = check_bounds(REFERENCE, prop("500.00", "apparel"))
+    assert "category_not_allowed" in codes(r)
+    assert r.verdict == "REVIEW" and not r.decided
+    assert [f.verdict for f in r.reviews] == ["REVIEW"]
+
+
+def test_a_denied_category_remains_a_hard_block_alongside_a_referred_one():
+    """Denied always wins: it is what the person actually refused."""
+    items = [CartItem(sku="S1", name="wine", category="alcohol",
+                      merchant_id="mch_spiritsco", price="500.00"),
+             CartItem(sku="S2", name="shirt", category="apparel",
+                      merchant_id="mch_threadco", price="500.00")]
+    r = check_bounds(REFERENCE, prop("1000.00", items=items,
+                                     merchant="mch_spiritsco"))
+    assert r.verdict == "BLOCK" and r.decided
 
 
 def test_a_purchase_outside_the_time_window_blocks():

@@ -40,10 +40,17 @@ class Finding:
     ``clause`` names the mandate field, because a decision that cannot cite the
     clause it enforced is not a defensible decision -- it is an opinion. The
     dispute packet quotes these verbatim.
+
+    ``verdict`` is one of four:
+
+      BLOCK   -- decided, and final. The model is never asked.
+      STEP_UP -- the human asked to be consulted at this point.
+      REVIEW  -- NOT decided. A signal the adjudicator must weigh. See below.
+      PASS    -- the bound was checked and satisfied.
     """
     code: str
     clause: str
-    verdict: str              # BLOCK | STEP_UP | PASS
+    verdict: str              # BLOCK | STEP_UP | REVIEW | PASS
     detail: str
     observed: str = ""
     limit: str = ""
@@ -64,6 +71,10 @@ class BoundsResult:
     @property
     def step_ups(self) -> list[Finding]:
         return [f for f in self.findings if f.verdict == "STEP_UP"]
+
+    @property
+    def reviews(self) -> list[Finding]:
+        return [f for f in self.findings if f.verdict == "REVIEW"]
 
     @property
     def decided(self) -> bool:
@@ -143,8 +154,31 @@ def check_bounds(mandate: Mandate, proposal: Proposal,
     scope = mandate.scope
 
     # --- category ----------------------------------------------------------
-    # Denied beats allowed. A category on both lists is a compiler bug, and
-    # resolving it the safe way is the only defensible resolution.
+    # The two category lists are NOT the same kind of thing, and treating them
+    # alike was a real bug that measurement caught.
+    #
+    # `categories_denied` is what the human explicitly refused. "Nothing from
+    # liquor stores" is a sentence they said. A denied category is a hard BLOCK,
+    # final, and the model is never asked to reconsider it.
+    #
+    # `categories_allowed` is a COMPILED INFERENCE. The human said "groceries
+    # and household stuff"; the compiler mapped that onto a fixed taxonomy. The
+    # boundaries of that taxonomy are the taxonomy's, not the human's -- AA
+    # batteries bought in a supermarket are `electronics` to the register and
+    # "household stuff" to the person who asked for them. Treating a miss as a
+    # hard BLOCK silently promotes the taxonomy's category boundaries into
+    # commitments the human never made.
+    #
+    # The evidence that settled it: a mandate whose own source text said
+    # "delivery charges are fine" was blocking its own delivery charge, because
+    # a delivery fee is registered under `services`. No reading of that
+    # delegation supports the block.
+    #
+    # So an allowed-list miss is a REVIEW: not decided, handed to the
+    # adjudicator with the mismatch stated, and the adjudicator reasons about
+    # what the person meant. Denied stays hard. This is exactly the line the
+    # whole architecture draws -- mechanical where the human was mechanical,
+    # semantic where the compiler had to interpret.
     for cat in sorted(proposal.categories()):
         if cat in scope.categories_denied:
             findings.append(Finding(
@@ -153,8 +187,11 @@ def check_bounds(mandate: Mandate, proposal: Proposal,
                 observed=cat, limit=", ".join(scope.categories_denied)))
         elif not _matches(cat, scope.categories_allowed):
             findings.append(Finding(
-                "category_not_allowed", "categories_allowed", "BLOCK",
-                f"cart contains {cat}, which is outside the allowed categories",
+                "category_not_allowed", "categories_allowed", "REVIEW",
+                f"cart contains {cat}, which is not in the compiled allowed list "
+                f"({', '.join(scope.categories_allowed)}). The allowed list was "
+                f"inferred from the delegation, so this is a mismatch to weigh, "
+                f"not a rule the human wrote",
                 observed=cat, limit=", ".join(scope.categories_allowed)))
 
     # --- merchant ----------------------------------------------------------
@@ -236,6 +273,8 @@ def check_bounds(mandate: Mandate, proposal: Proposal,
         verdict = "BLOCK"
     elif any(f.verdict == "STEP_UP" for f in findings):
         verdict = "STEP_UP"
+    elif any(f.verdict == "REVIEW" for f in findings):
+        verdict = "REVIEW"
     else:
         verdict = "PASS"
     return BoundsResult(verdict=verdict, findings=findings)

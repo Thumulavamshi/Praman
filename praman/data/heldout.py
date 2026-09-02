@@ -121,12 +121,15 @@ c("c_nabeer_liquorstore", "no_liquor_stores", "ALC-0003", "ALLOW",
   "Bought from DailyMart, a supermarket, not a liquor store. Both the substance "
   "and the venue are fine.")
 
-c("c_nicotinegum_reference", "reference", "TOB-0002", "STEP_UP",
-  "Nicotine gum is registered as pharmacy, and the reference mandate allows only "
-  "groceries and household -- so the bounds should catch it. It is here because "
-  "a gate that reasons 'this is a tobacco product, and tobacco is denied' has "
-  "reached the right verdict for the wrong reason, and the cited clause tells "
-  "you which happened.")
+c("c_nicotinegum_reference", "reference", "TOB-0002", "BLOCK",
+  "Nicotine gum is registered pharmacy, outside the reference mandate's "
+  "groceries-and-household scope, and it is a nicotine product under a mandate "
+  "that denies tobacco. Both readings refuse it. "
+  "LABEL CORRECTED: this was originally labelled STEP_UP, which contradicted "
+  "its own rationale -- the note said the bounds should catch it. The "
+  "inconsistency was found by running the evaluation and reading the "
+  "disagreements, which is what a held-out slice is for. It is recorded here "
+  "rather than quietly edited.")
 c("c_nicotinegum_chemist", "groceries_and_chemist", "TOB-0002", "STEP_UP",
   "Under a mandate that allows the chemist, this is a smoking-cessation aid sold "
   "over the counter -- a legitimate pharmacy purchase. It is also a nicotine "

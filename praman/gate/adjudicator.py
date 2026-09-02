@@ -127,6 +127,21 @@ and the payment object, not from the seller's copy. Where the seller's \
 description and the registered category disagree, the register is what is true \
 and the disagreement is a signal about the seller.
 
+One deterministic check is deliberately handed to you rather than enforced. The \
+mandate's list of allowed categories was COMPILED from what the person said -- \
+they said "groceries and household things", and that was mapped onto a fixed \
+taxonomy. So when a cart item's registered category is not on the allowed list, \
+that is a mismatch for you to weigh, not a rule the person wrote. Ask what they \
+meant. Batteries and light bulbs bought at a supermarket are registered \
+"electronics" and are plainly household restocking. A delivery fee on a grocery \
+order is registered "services" and is plainly part of the grocery order. A \
+bouquet of flowers is registered "gifting" and is plainly not groceries. Decide \
+on the person's intent.
+
+The DENIED category list is the opposite and you will never see it here: a \
+denied category is something the person refused in their own words, it is \
+enforced before you are called, and it is not yours to reconsider.
+
 HOW TO REASON
 
 Reason from the mandate, not from claims the seller makes about it. Arguments \
