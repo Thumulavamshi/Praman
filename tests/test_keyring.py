@@ -44,6 +44,7 @@ def fake_genai(monkeypatch):
 
 
 def ring(**kw):
+    kw.setdefault("model", "gemini-3.5-flash")
     return GeminiKeyRing(KEYS, rpm_per_key=kw.pop("rpm_per_key", 6000), **kw)
 
 
@@ -101,16 +102,35 @@ def test_a_daily_exhausted_key_leaves_rotation_until_the_quota_resets():
     _, state = r.acquire()
     r.mark_daily_exhausted(state)
     assert r.live == 2
-    assert state.exhausted_until == next_pacific_midnight()
+    assert state.exhausted_until["gemini-3.5-flash"] == next_pacific_midnight()
     labels = {r.acquire()[1].label for _ in range(6)}
     assert state.label not in labels
 
 
-def test_a_pool_with_every_key_spent_raises_rather_than_looping():
+def test_quota_is_tracked_per_model_because_google_enforces_it_that_way():
+    """Verified against the live API: a key 429'd on one model serves another.
+
+    Retiring a key wholesale on one model's quota throws away every other model
+    it can still serve -- most of a six-key pool's daily budget.
+    """
+    spent = ring(model="gemini-3.5-flash")
+    for k in list(spent.keys):
+        spent.mark_daily_exhausted(k)
+    assert spent.live == 0
+
+    # Same keys, different model: full budget.
+    other = GeminiKeyRing(KEYS, rpm_per_key=6000, model="gemini-3-flash-preview")
+    for k, src in zip(other.keys, spent.keys):
+        k.exhausted_until = dict(src.exhausted_until)
+    assert other.live == 3
+    assert other.acquire()[1].label == "key1"
+
+
+def test_a_pool_with_every_key_spent_raises_and_says_to_try_another_model():
     r = ring()
     for k in list(r.keys):
         r.mark_daily_exhausted(k)
-    with pytest.raises(AllKeysExhausted, match="daily quota"):
+    with pytest.raises(AllKeysExhausted, match="per key PER MODEL"):
         r.acquire()
 
 
@@ -213,6 +233,23 @@ def test_the_limiter_paces_calls_to_the_pools_aggregate_rate():
 def test_the_pool_rate_scales_with_the_number_of_keys():
     assert GeminiKeyRing(KEYS, rpm_per_key=10).limiter.capacity == 30
     assert GeminiKeyRing(KEYS[:1], rpm_per_key=10).limiter.capacity == 10
+
+
+def test_a_completed_run_is_never_silently_overwritten(tmp_path):
+    """A run costs real quota and may not be reproducible the same day."""
+    from praman.eval.harness import save_run
+    from praman.eval.metrics import CaseResult
+    from praman.ledger.money import money
+
+    out = tmp_path / "run.json"
+    good = [CaseResult("c1", "A", "ALLOW", "ALLOW", money("100.00"), 1.0, 0.0, False)]
+    save_run(out, good, {"mode": "first"})
+    save_run(out, [], {"mode": "second"})
+
+    kept = [p for p in tmp_path.iterdir() if p.name != "run.json"]
+    assert len(kept) == 1, "the first run should have been rotated aside"
+    import json
+    assert json.loads(kept[0].read_text())["meta"]["mode"] == "first"
 
 
 # --- the adjudicator on top of the ring ------------------------------------

@@ -105,8 +105,21 @@ def run(cases: list[EvalCase], gate_factory, *, workers: int = 8,
 
 
 def save_run(path, results: list[CaseResult], meta: dict) -> None:
+    """Write a run, never over one that already exists.
+
+    Learned the expensive way: a completed, valid run was overwritten by a
+    re-run of the same command that then failed on exhausted quota, and the good
+    numbers were gone. A run is measurement -- it costs real quota and cannot
+    always be reproduced the same day -- so an existing file is rotated aside
+    rather than replaced.
+    """
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
+    if p.exists():
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        kept = p.with_name(f"{p.stem}.{stamp}{p.suffix}")
+        p.rename(kept)
+        print(f"  (existing run preserved as {kept.name})")
     payload = {
         "meta": {**meta, "written_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")},
         "results": [{**asdict(r), "amount": str(r.amount)} for r in results],

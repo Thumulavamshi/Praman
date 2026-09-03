@@ -192,7 +192,8 @@ def main():
         # One ring shared by every worker. Per-worker rings would each pace to
         # the full pool rate and together overshoot it by the worker count,
         # which is the fastest way to burn a free-tier day.
-        ring = GeminiKeyRing(rpm_per_key=float(os.getenv("PRAMAN_GEMINI_RPM", "10")))
+        ring = GeminiKeyRing(rpm_per_key=float(os.getenv("PRAMAN_GEMINI_RPM", "10")),
+                             model=model)
         print(ring.report())
         seen = set()
 

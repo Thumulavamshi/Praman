@@ -69,14 +69,28 @@ def looks_like_daily_exhaustion(message: str) -> bool:
 
 @dataclass
 class KeyState:
+    """One key's state, with daily exhaustion tracked PER MODEL.
+
+    Verified empirically, not assumed: a key that returns 429 "exceeded your
+    quota" on gemini-3.5-flash answers normally on gemini-3-flash-preview in the
+    same second. Daily allocation is per key per model, so retiring a key
+    wholesale on one model's quota would throw away every other model it can
+    still serve -- on a six-key pool that is most of the day's budget.
+    """
     key: str
     label: str
     calls: int = 0
     failures: int = 0
-    exhausted_until: datetime | None = None
+    # model -> the UTC instant that model's daily quota resets for this key
+    exhausted_until: dict[str, datetime] = field(default_factory=dict)
 
-    def available(self, now: datetime) -> bool:
-        return self.exhausted_until is None or now >= self.exhausted_until
+    def available(self, now: datetime, model: str = "") -> bool:
+        until = self.exhausted_until.get(model)
+        return until is None or now >= until
+
+    def spent_models(self) -> list[str]:
+        now = datetime.now(timezone.utc)
+        return sorted(m for m, t in self.exhausted_until.items() if now < t)
 
     @property
     def masked(self) -> str:
@@ -129,7 +143,7 @@ class GeminiKeyRing:
     """
 
     def __init__(self, keys: list[str] | None = None, *,
-                 rpm_per_key: float = 10.0):
+                 rpm_per_key: float = 10.0, model: str = ""):
         keys = keys if keys is not None else load_keys_from_env()
         if not keys:
             raise RuntimeError(
@@ -147,6 +161,9 @@ class GeminiKeyRing:
         self.keys = [KeyState(key=k, label=f"key{i + 1}")
                      for i, k in enumerate(uniq)]
         self.rpm_per_key = rpm_per_key
+        # The model this ring is serving. Quota is per key per model, so the
+        # ring has to know which one it is spending.
+        self.model = model
         self.limiter = RateLimiter(rpm_per_key * len(self.keys))
         self._cycle = itertools.cycle(range(len(self.keys)))
         # Reentrant, deliberately: acquire() holds this lock while it picks a
@@ -162,7 +179,7 @@ class GeminiKeyRing:
     @property
     def live(self) -> int:
         now = datetime.now(timezone.utc)
-        return sum(1 for k in self.keys if k.available(now))
+        return sum(1 for k in self.keys if k.available(now, self.model))
 
     def _client_for(self, state: KeyState):
         from google import genai
@@ -180,18 +197,22 @@ class GeminiKeyRing:
         with self._lock:
             for _ in range(len(self.keys)):
                 state = self.keys[next(self._cycle)]
-                if state.available(now):
+                if state.available(now, self.model):
                     state.calls += 1
                     return self._client_for(state), state
-            soonest = min((k.exhausted_until for k in self.keys
-                           if k.exhausted_until), default=None)
+            soonest = min((t for k in self.keys
+                           for m, t in k.exhausted_until.items()
+                           if m == self.model), default=None)
             raise AllKeysExhausted(
-                f"all {len(self.keys)} keys have spent their daily quota"
-                + (f"; the first resets at {soonest.isoformat()}" if soonest else ""))
+                f"all {len(self.keys)} keys have spent today's quota for "
+                f"{self.model or '(model unset)'}"
+                + (f"; it resets at {soonest.isoformat()}" if soonest else "")
+                + ". Quota is per key PER MODEL -- another model may still have "
+                  "budget on these same keys.")
 
-    def mark_daily_exhausted(self, state: KeyState) -> None:
+    def mark_daily_exhausted(self, state: KeyState, model: str = "") -> None:
         with self._lock:
-            state.exhausted_until = next_pacific_midnight()
+            state.exhausted_until[model or self.model] = next_pacific_midnight()
             state.failures += 1
 
     def mark_transient(self, state: KeyState) -> None:
@@ -199,17 +220,19 @@ class GeminiKeyRing:
             state.failures += 1
 
     def usage(self) -> list[dict]:
+        now = datetime.now(timezone.utc)
         return [{"key": k.masked, "calls": k.calls, "failures": k.failures,
-                 "exhausted_until": (k.exhausted_until.isoformat()
-                                     if k.exhausted_until else None)}
+                 "spent_models": k.spent_models(),
+                 "available": k.available(now, self.model)}
                 for k in self.keys]
 
     def report(self) -> str:
-        lines = [f"key pool: {self.live}/{len(self.keys)} live, "
-                 f"paced at {self.rpm_per_key * len(self.keys):.0f} calls/min"]
+        lines = [f"key pool: {self.live}/{len(self.keys)} live on "
+                 f"{self.model or '(model unset)'}, paced at "
+                 f"{self.rpm_per_key * len(self.keys):.0f} calls/min"]
         for u in self.usage():
-            flag = "  EXHAUSTED until " + u["exhausted_until"][:16] \
-                if u["exhausted_until"] else ""
+            flag = ("  SPENT TODAY on: " + ", ".join(u["spent_models"])
+                    if u["spent_models"] else "")
             lines.append(f"  {u['key']:<28} {u['calls']:>4} calls  "
                          f"{u['failures']:>2} failures{flag}")
         return "\n".join(lines)
@@ -261,7 +284,7 @@ def call_with_rotation(ring: GeminiKeyRing, fn, *, max_attempts: int | None = No
 
             last = exc
             if rate_limited and looks_like_daily_exhaustion(message):
-                ring.mark_daily_exhausted(state)
+                ring.mark_daily_exhausted(state, ring.model)
                 if on_retry:
                     on_retry(state, "daily quota spent; key retired for today")
                 continue
