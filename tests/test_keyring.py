@@ -156,6 +156,38 @@ def test_a_non_rate_limit_error_is_raised_not_retried():
         call_with_rotation(r, fn, max_attempts=4)
 
 
+def test_a_503_is_retried_because_the_model_is_busy_not_the_key_bad():
+    """Observed on a real run: 3 of 100 cases came back 503 and were wasted.
+
+    With only 429 retried, each 503 burned a case and failed closed to STEP_UP.
+    Correct behaviour, but it costs a measurement.
+    """
+    r = ring()
+    n = []
+
+    def fn(client):
+        n.append(1)
+        if len(n) < 3:
+            raise FakeAPIError(503, "This model is currently experiencing high demand.")
+        return "verdict"
+
+    assert call_with_rotation(r, fn, max_attempts=6) == "verdict"
+    assert r.live == 3                       # no key retired
+    assert all(k.failures == 0 for k in r.keys)   # and none blamed
+
+
+def test_a_503_never_retires_a_key_for_the_day():
+    """Congestion is not quota. Retiring a key over it would be a real loss."""
+    r = ring()
+
+    def fn(client):
+        raise FakeAPIError(503, "high demand")
+
+    with pytest.raises(RuntimeError, match="exhausted"):
+        call_with_rotation(r, fn, max_attempts=3)
+    assert r.live == 3
+
+
 def test_exhausting_the_pool_mid_run_propagates_rather_than_hanging():
     r = ring()
 

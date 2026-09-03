@@ -45,6 +45,15 @@ PACIFIC = timezone(timedelta(hours=-8))
 _DAILY_MARKERS = ("perday", "per day", "requests per day", "daily limit",
                   "generate_requests_per_model_per_day", "quota_limit_value")
 
+# Server-side hiccups. 503 UNAVAILABLE ("this model is currently experiencing
+# high demand") is the common one, and it is emphatically NOT a key problem --
+# retiring or even penalising a key for it would be wrong. Retry with backoff,
+# rotating while doing so only because a different key may land on a less
+# congested endpoint. Observed on a real run: three of a hundred cases came back
+# 503 and, with only 429 retried, each burned a case and failed closed to
+# STEP_UP. Correct behaviour, wasted measurement.
+_TRANSIENT_SERVER_CODES = (500, 502, 503, 504)
+
 
 def next_pacific_midnight(now: datetime | None = None) -> datetime:
     now = (now or datetime.now(timezone.utc)).astimezone(PACIFIC)
@@ -241,18 +250,31 @@ def call_with_rotation(ring: GeminiKeyRing, fn, *, max_attempts: int | None = No
         except errors.APIError as exc:
             code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
             message = str(exc)
-            if code != 429 and "RESOURCE_EXHAUSTED" not in message.upper():
+            rate_limited = code == 429 or "RESOURCE_EXHAUSTED" in message.upper()
+            overloaded = code in _TRANSIENT_SERVER_CODES
+
+            # Anything else -- a 400 schema error, a 403 bad key -- is a bug in
+            # the request, not congestion. Rotating keys would just repeat it on
+            # a different key and burn quota discovering that.
+            if not (rate_limited or overloaded):
                 raise
+
             last = exc
-            if looks_like_daily_exhaustion(message):
+            if rate_limited and looks_like_daily_exhaustion(message):
                 ring.mark_daily_exhausted(state)
                 if on_retry:
                     on_retry(state, "daily quota spent; key retired for today")
                 continue
-            ring.mark_transient(state)
+
+            # A 503 is the model being busy, not the key being bad, so it is
+            # deliberately not counted against the key's failure tally.
+            if rate_limited:
+                ring.mark_transient(state)
             delay = min(2 ** attempt, 30) * (0.5 + random.random())
             if on_retry:
-                on_retry(state, f"rate limited; backing off {delay:.1f}s")
+                on_retry(state, ("rate limited" if rate_limited
+                                 else f"model overloaded ({code})")
+                         + f"; backing off {delay:.1f}s")
             time.sleep(delay)
     raise RuntimeError(
         f"exhausted {attempts} attempts across {len(ring)} keys; "
