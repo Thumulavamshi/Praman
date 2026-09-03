@@ -350,23 +350,37 @@ It distinguishes the two limits, which fail completely differently:
   Pacific; retrying it just wastes a slot on every pass.
 
 ```bash
-GEMINI_API_KEYS="AIza...one,AIza...two,AIza...three"
-PRAMAN_GEMINI_RPM=10
+GEMINI_API_KEYS="key1,key2,key3"
+PRAMAN_GEMINI_RPM=5
 ```
+
+**The real free-tier quota, measured against live keys rather than taken from a
+table:**
+
+```
+GenerateRequestsPerMinutePerProjectPerModel-FreeTier    5
+GenerateRequestsPerDayPerProjectPerModel-FreeTier      20
+```
+
+Twenty requests per day, per key, per model. Six keys buy 120 requests per model
+per day — about one 100-case evaluation, or fifteen dispute investigations.
+Because the limit is per *model*, switching models is what actually multiplies
+the budget, and the ring tracks exhaustion per model for exactly that reason.
 
 Measured cost of one evaluation iteration (~1,800 input + ~400 output tokens per
 call):
 
-| Iteration | Model calls | Tokens | 1 key | 3 keys |
-|---|---|---|---|---|
-| Held-out 100 cases | ~85 | ~190k | ~9 min | ~3 min |
-| Generated 500 cases | ~440 | ~970k | ~44 min | ~15 min |
-| **Full 600-case set** | **~525** | **~1.15M** | ~52 min | **~18 min** |
+| Iteration | Model calls | Tokens | Keys needed (one model) |
+|---|---|---|---|
+| Held-out 100 cases | ~85 | ~190k | **5** |
+| Generated 500 cases | ~440 | ~970k | 22 — split across models instead |
+| Full 600-case set | ~525 | ~1.15M | 27 — split across models instead |
 
-**RPD is not the binding constraint — RPM is.** At ~1,500 requests/day/key even
-a single key covers ~2.8 full iterations per day. More keys buy *speed* and
-same-day re-runs, not feasibility. Three is comfortable; five gives room to
-iterate all day.
+**RPD is the binding constraint, and it binds hard.** At 20 requests/day/key a
+single held-out run consumes five keys' entire daily allocation for one model.
+Six keys is enough for one evaluation per model per day, which is why the ring
+tracks quota per model and why anything larger has to be spread across models
+and labelled accordingly.
 
 If the pool runs dry mid-run the gate degrades to `STEP_UP`, never to `ALLOW`.
 

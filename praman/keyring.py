@@ -13,6 +13,17 @@ treating them alike is what burns a key pool in ten minutes:
   it must be taken out of rotation entirely, not retried; retrying it wastes a
   slot on every pass through the ring.
 
+Measured, not assumed, against real keys in September 2026:
+
+    GenerateRequestsPerMinutePerProjectPerModel-FreeTier   5
+    GenerateRequestsPerDayPerProjectPerModel-FreeTier     20
+
+**Twenty requests per day, per key, per model.** Not the ~1,500 the public
+free-tier tables suggest. Six keys therefore buy 120 requests per model per day
+-- roughly one 100-case evaluation, or fifteen dispute investigations. Quota is
+per MODEL though, so switching models is what actually multiplies the budget.
+Plan around 20, and check before starting anything long.
+
 So this class does three things: paces calls to fit the pool's aggregate RPM,
 rotates across keys so the load spreads, and quarantines a key that has
 exhausted its day until the quota resets. It is thread-safe because the
@@ -27,6 +38,7 @@ from __future__ import annotations
 import itertools
 import os
 import random
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -55,6 +67,24 @@ _DAILY_MARKERS = ("perday", "per day", "requests per day", "daily limit",
 _TRANSIENT_SERVER_CODES = (500, 502, 503, 504)
 
 
+def _transport_errors() -> tuple:
+    """Connection-level failures worth retrying, if httpx is importable.
+
+    These arrive as exceptions from the HTTP layer rather than as an APIError
+    with a status, so the API error path never sees them.
+    """
+    try:
+        import httpx
+        return (httpx.RemoteProtocolError, httpx.ConnectError,
+                httpx.ReadError, httpx.WriteError, httpx.ReadTimeout,
+                httpx.ConnectTimeout, httpx.PoolTimeout)
+    except Exception:                                   # noqa: BLE001
+        return (ConnectionError,)
+
+
+_TRANSPORT_ERRORS = _transport_errors()
+
+
 def next_pacific_midnight(now: datetime | None = None) -> datetime:
     now = (now or datetime.now(timezone.utc)).astimezone(PACIFIC)
     tomorrow = (now + timedelta(days=1)).replace(
@@ -65,6 +95,26 @@ def next_pacific_midnight(now: datetime | None = None) -> datetime:
 def looks_like_daily_exhaustion(message: str) -> bool:
     m = (message or "").lower()
     return any(marker in m for marker in _DAILY_MARKERS)
+
+
+def retry_delay_from(message: str) -> float | None:
+    """Google says when to come back. Believe it rather than guessing.
+
+    A 429 carries a RetryInfo block -- 'retryDelay': '45s' -- which is the
+    server's own statement of when the window reopens. Blind exponential
+    backoff either undershoots it (and burns another rejection) or overshoots
+    it (and wastes the wait). Observed: a 5 RPM limit returning retryDelay 45s
+    while our backoff was still at 1.5 seconds.
+    """
+    m = re.search(r"'retryDelay':\s*'(\d+(?:\.\d+)?)s'", message or "")
+    if not m:
+        m = re.search(r"retry in (\d+(?:\.\d+)?)s", message or "", re.I)
+    if not m:
+        return None
+    try:
+        return min(float(m.group(1)), 120.0)
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -143,7 +193,7 @@ class GeminiKeyRing:
     """
 
     def __init__(self, keys: list[str] | None = None, *,
-                 rpm_per_key: float = 10.0, model: str = ""):
+                 rpm_per_key: float = 5.0, model: str = ""):
         keys = keys if keys is not None else load_keys_from_env()
         if not keys:
             raise RuntimeError(
@@ -270,6 +320,18 @@ def call_with_rotation(ring: GeminiKeyRing, fn, *, max_attempts: int | None = No
             raise
         try:
             return fn(client)
+        except _TRANSPORT_ERRORS as exc:
+            # The connection died before the API could answer -- not a quota
+            # problem, not a bad request, just the network. Observed killing a
+            # dispute investigation that had already spent five tool calls, so
+            # it is worth a retry rather than losing that work.
+            last = exc
+            delay = min(2 ** attempt, 20) * (0.5 + random.random())
+            if on_retry:
+                on_retry(state, f"{exc.__class__.__name__}; retrying in "
+                                f"{delay:.1f}s")
+            time.sleep(delay)
+            continue
         except errors.APIError as exc:
             code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
             message = str(exc)
@@ -293,7 +355,10 @@ def call_with_rotation(ring: GeminiKeyRing, fn, *, max_attempts: int | None = No
             # deliberately not counted against the key's failure tally.
             if rate_limited:
                 ring.mark_transient(state)
-            delay = min(2 ** attempt, 30) * (0.5 + random.random())
+            told = retry_delay_from(message)
+            delay = (told + random.random()
+                     if told is not None
+                     else min(2 ** attempt, 30) * (0.5 + random.random()))
             if on_retry:
                 on_retry(state, ("rate limited" if rate_limited
                                  else f"model overloaded ({code})")
