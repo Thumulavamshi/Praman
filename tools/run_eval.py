@@ -9,6 +9,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -145,8 +146,17 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--bounds-only", action="store_true",
                     help="no model calls; the deterministic baseline")
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=8,
+                    help="on gemini the key ring paces calls, so more workers "
+                         "than the pool RPM just queue on the limiter")
     ap.add_argument("--effort", default="high")
+    ap.add_argument("--provider", default=os.getenv("PRAMAN_PROVIDER", "anthropic"),
+                    choices=["anthropic", "gemini"],
+                    help="which model answers the semantic question")
+    ap.add_argument("--model", default="",
+                    help="override the provider's default model")
+    ap.add_argument("--thinking-budget", type=int, default=512,
+                    help="gemini only: reasoning tokens before the verdict")
     ap.add_argument("--out", default="out/run.json")
     ap.add_argument("--regrade")
     args = ap.parse_args()
@@ -175,11 +185,36 @@ def main():
         def factory():
             return Gate(adjudicator=StaticAdjudicator(), issuer=issuer)
         mode = "deterministic bounds only (no model)"
-    else:
+    elif args.provider == "gemini":
+        from praman.gate.gemini import DEFAULT_GEMINI_MODEL, GeminiAdjudicator
+        from praman.keyring import GeminiKeyRing
+        model = args.model or DEFAULT_GEMINI_MODEL
+        # One ring shared by every worker. Per-worker rings would each pace to
+        # the full pool rate and together overshoot it by the worker count,
+        # which is the fastest way to burn a free-tier day.
+        ring = GeminiKeyRing(rpm_per_key=float(os.getenv("PRAMAN_GEMINI_RPM", "10")))
+        print(ring.report())
+        seen = set()
+
+        def note(state, why):
+            line = f"  [{state.masked}] {why}"
+            if line not in seen:
+                seen.add(line)
+                print(line, flush=True)
+
         def factory():
-            return Gate(adjudicator=LLMAdjudicator(effort=args.effort),
+            return Gate(adjudicator=GeminiAdjudicator(
+                ring=ring, model=model, thinking_budget=args.thinking_budget,
+                on_retry=note), issuer=issuer, always_consult=True)
+        mode = (f"{model}, thinking_budget={args.thinking_budget}, "
+                f"{len(ring)} keys, always_consult")
+        args._ring = ring
+    else:
+        model = args.model or "claude-opus-5"
+        def factory():
+            return Gate(adjudicator=LLMAdjudicator(model=model, effort=args.effort),
                         issuer=issuer, always_consult=True)
-        mode = f"claude-opus-5, effort={args.effort}, always_consult"
+        mode = f"{model}, effort={args.effort}, always_consult"
 
     print(f"running {len(cases)} cases — {mode}")
 
@@ -187,8 +222,13 @@ def main():
         print(f"  {done}/{total}", flush=True)
 
     results = run(cases, factory, workers=args.workers, progress=progress)
+    # The model that answered is recorded with the run, so a report can never
+    # quietly inherit a number produced by a different one.
     save_run(ROOT / args.out, results,
-             {"mode": mode, "n_cases": len(cases), "effort": args.effort})
+             {"mode": mode, "provider": args.provider, "n_cases": len(cases),
+              "effort": args.effort})
+    if getattr(args, "_ring", None) is not None:
+        print("\n" + args._ring.report())
     print_report(report(results), results)
     print(f"\nfull run written to {args.out} — re-grade with "
           f"--regrade {args.out}")

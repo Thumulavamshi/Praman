@@ -7,6 +7,7 @@ depends on a live network is a demo that fails on stage.
 """
 import argparse
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -79,9 +80,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true",
                     help="deterministic adjudicator; no network at all")
+    ap.add_argument("--provider", default=os.getenv("PRAMAN_PROVIDER", "anthropic"),
+                    choices=["anthropic", "gemini"])
     args = ap.parse_args()
 
-    adjudicator = StaticAdjudicator() if args.offline else LLMAdjudicator()
+    if args.offline:
+        adjudicator = StaticAdjudicator()
+    elif args.provider == "gemini":
+        from praman.gate.gemini import GeminiAdjudicator
+        adjudicator = GeminiAdjudicator()
+    else:
+        adjudicator = LLMAdjudicator()
     gate = Gate(adjudicator=adjudicator, issuer=ISSUER, always_consult=True)
     engine = Engine()
     gateway = get_gateway()
@@ -95,7 +104,9 @@ def main():
              "client\n               is in praman/pg/razorpay_pg.py and swaps in "
              "with PRAMAN_PG=razorpay)"
              if gateway.name == "mock" else ""))
-    print(f"  adjudicator  {'deterministic double (offline)' if args.offline else 'claude-opus-5'}")
+    print(f"  adjudicator  "
+          + ("deterministic double (offline)" if args.offline
+             else type(adjudicator).__name__ + f" / {getattr(adjudicator, 'model', '?')}"))
 
     # ---------------------------------------------------------------- BEAT 1
     beat("DELEGATION — plain English compiles to enforceable bounds")

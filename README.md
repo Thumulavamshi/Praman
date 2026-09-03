@@ -292,6 +292,60 @@ discipline has a hole in it.
 
 ---
 
+## Model providers
+
+The `Adjudicator` protocol means the thing that answers the semantic question is
+swappable. Two implementations ship:
+
+| `PRAMAN_PROVIDER` | Model | |
+|---|---|---|
+| `anthropic` | `claude-opus-5` | what every number in this README was measured on |
+| `gemini` | `gemini-2.5-flash` | free tier, rotated across a pool of keys |
+
+The system prompt, the fencing contract, the output schema and the fail-closed
+behaviour are **identical** across both. Only the model changes — otherwise the
+two sets of numbers would be measuring different systems and comparing them
+would mean nothing.
+
+**Metrics do not transfer between providers.** A number measured on
+`claude-opus-5` describes `claude-opus-5`. Running on Gemini Flash means
+re-running the evaluation; the run metadata records which model answered, so a
+report can never quietly inherit a figure produced by a different one.
+
+### The free-tier key pool
+
+Quota is enforced per project, so a pool means one key per Google account.
+`praman/keyring.py` rotates across them and, more importantly, **paces** calls
+to the pool's aggregate rate rather than firing them and handling the
+rejections — a 429'd request still cost a round trip.
+
+It distinguishes the two limits, which fail completely differently:
+
+- **RPM** is a burst limit. Back off a few seconds, rotate, carry on.
+- **RPD** is a daily allocation. The key leaves rotation until midnight US
+  Pacific; retrying it just wastes a slot on every pass.
+
+```bash
+GEMINI_API_KEYS="AIza...one,AIza...two,AIza...three"
+PRAMAN_GEMINI_RPM=10
+```
+
+Measured cost of one evaluation iteration (~1,800 input + ~400 output tokens per
+call):
+
+| Iteration | Model calls | Tokens | 1 key | 3 keys |
+|---|---|---|---|---|
+| Held-out 100 cases | ~85 | ~190k | ~9 min | ~3 min |
+| Generated 500 cases | ~440 | ~970k | ~44 min | ~15 min |
+| **Full 600-case set** | **~525** | **~1.15M** | ~52 min | **~18 min** |
+
+**RPD is not the binding constraint — RPM is.** At ~1,500 requests/day/key even
+a single key covers ~2.8 full iterations per day. More keys buy *speed* and
+same-day re-runs, not feasibility. Three is comfortable; five gives room to
+iterate all day.
+
+If the pool runs dry mid-run the gate degrades to `STEP_UP`, never to `ALLOW`.
+
 ## Running it
 
 ```bash
@@ -302,7 +356,8 @@ cp .env.example .env        # add your keys
 ```bash
 .venv/bin/python -m pytest tests/ -q          # 127 tests, no network
 .venv/bin/python tools/demo.py --offline      # the 7-beat demo, no network
-.venv/bin/python tools/demo.py                # with the live adjudicator
+.venv/bin/python tools/demo.py                # live adjudicator (PRAMAN_PROVIDER)
+.venv/bin/python tools/demo.py --provider gemini
 ```
 
 Evaluation:
@@ -311,6 +366,7 @@ Evaluation:
 python tools/build_dataset.py 500                     # rebuild the case set
 python tools/run_eval.py --bounds-only                # deterministic baseline, free
 python tools/run_eval.py --heldout                    # the 100 hand-labelled cases
+python tools/run_eval.py --heldout --provider gemini  # same, on the free-tier pool
 python tools/run_eval.py --regrade out/heldout.json   # re-grade a stored run, free
 ```
 
@@ -337,13 +393,13 @@ PRAMAN_OFFLINE=1 .venv/bin/uvicorn praman.api:app --reload
 praman/
   ledger/      money · fees · events · eventlog · handlers · state ·
                invariants · engine · generator
-  mandate/     schema · signing · compiler
-  gate/        bounds · fencing · adjudicator · decision · gate
+  mandate/     schema · signing · compiler · gemini_compiler
+  gate/        bounds · fencing · adjudicator · gemini · decision · gate
   evidence/    chain
   pg/          interface · mock · razorpay_pg
   data/        catalog · mandates · cases · buckets · injections · heldout
   eval/        metrics · harness
-  orchestrator.py · api.py
+  keyring.py · orchestrator.py · api.py
 tools/         demo · run_eval · build_dataset · live_check
 docs/          taxonomy.md · injection-seeds.md
 ```
