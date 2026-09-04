@@ -13,6 +13,11 @@ venv/
 .ruff_cache/
 
 # Praman working output
-out/
 datasets/generated/
-*.log
+
+# out/ is NOT ignored. A stored run is evidence, not working output: the
+# README quotes numbers from these files, and a number whose run cannot be
+# re-graded is a number nobody can check. tools/run_eval.py --regrade reads
+# them, so they are the difference between a published figure and a claim.
+# Logs are transient, though, and a run's own .json carries what matters.
+out/*.log
