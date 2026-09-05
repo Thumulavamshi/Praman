@@ -40,6 +40,9 @@ EVIDENCE_SUBMITTED = "evidence_submitted"
 CHARGEBACK_WON = "chargeback_won"
 CHARGEBACK_LOST = "chargeback_lost"
 
+# --- Reconciliation ---------------------------------------------------------
+RECON_ADJUSTMENT = "recon_adjustment"
+
 # --- Settlement -------------------------------------------------------------
 SETTLEMENT_CREDITED = "settlement_credited"
 RESERVE_HELD = "reserve_held"
@@ -50,7 +53,7 @@ ALL_EVENT_TYPES = frozenset({
     PAYMENT_AUTHORIZED, PAYMENT_CAPTURED, PAYMENT_FAILED, FEE_DEBITED,
     REFUND_INITIATED, REFUND_SETTLED,
     CHARGEBACK_RAISED, EVIDENCE_SUBMITTED, CHARGEBACK_WON, CHARGEBACK_LOST,
-    SETTLEMENT_CREDITED, RESERVE_HELD, RESERVE_RELEASED,
+    SETTLEMENT_CREDITED, RESERVE_HELD, RESERVE_RELEASED, RECON_ADJUSTMENT,
 })
 
 # The six that move money. Kept as its own set so the thin-spine test can assert

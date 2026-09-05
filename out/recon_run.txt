@@ -1,0 +1,98 @@
+==============================================================================
+PHASE 6 — RECONCILIATION
+==============================================================================
+
+  book        24 settlements, 240 settlement rows, 24 bank credits
+
+the clean pair, as a control
+------------------------------------------------------------------------------
+  24 settlements matched, 0 unmatched, 0 bank lines unmatched, 0 exceptions worth INR 0.00
+  auto-match 100.0%   — a correct pair must reconcile to nothing, or the rest means nothing
+
+now broken in 13 places, the way real files break
+------------------------------------------------------------------------------
+  {'missing_credit': 2, 'fee_drift': 2, 'split_payout': 5, 'duplicate_credit': 3, 'orphan_credit': 1}
+
+  DETERMINISTIC PASS
+    17 settlements matched, 7 unmatched, 14 bank lines unmatched, 23 exceptions worth INR 143683.31
+    auto-match 70.8%
+
+  Two break kinds raised no exception at all — the matcher's own
+  fallbacks recovered them. That is the pass earning its keep.
+
+the residual goes to gemini-3-flash-preview
+------------------------------------------------------------------------------
+Direct use of automatic function calling (AFC) in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream. Similarly, direct use of AFC in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message.
+  23 proposals in 8.2s
+
+every proposal, through the verifier
+------------------------------------------------------------------------------
+  [ok  ] adjusting_entry Dr 5000 Cr 1200 0.02                 high   
+         booked INR 0.02
+  [ok  ] adjusting_entry Dr 5000 Cr 1200 0.02                 high   
+         booked INR 0.02
+  [ok  ] escalate: [setl_7_006] Settlement setl_7_006 (7306.48) has no matching high   
+         escalated to a human, which is a correct answer
+  [ok  ] escalate: [setl_7_009] Settlement setl_7_009 (5691.56) has no matching high   
+         escalated to a human, which is a correct answer
+  [ok  ] split_match setl_7_012 <- 2 credits                  high   
+         credits sum exactly to INR 6108.41
+  [ok  ] split_match setl_7_013 <- 2 credits                  high   
+         credits sum exactly to INR 10725.07
+  [ok  ] split_match setl_7_018 <- 2 credits                  high   
+         credits sum exactly to INR 9530.53
+  [ok  ] split_match setl_7_021 <- 2 credits                  high   
+         credits sum exactly to INR 6606.03
+  [ok  ] split_match setl_7_023 <- 2 credits                  high   
+         credits sum exactly to INR 11710.34
+  [ -- ] match setl_7_012 <- bank_0012a                       high   
+         superseded: setl_7_012 was already resolved
+  [ -- ] match setl_7_012 <- bank_0012b                       high   
+         superseded: setl_7_012 was already resolved
+  [ -- ] match setl_7_013 <- bank_0013a                       high   
+         superseded: setl_7_013 was already resolved
+  [ -- ] match setl_7_013 <- bank_0013b                       high   
+         superseded: setl_7_013 was already resolved
+  [ok  ] escalate: [bank_0016_dup] Credit for 14070.41 exists with UTR700016 bu high   
+         escalated to a human, which is a correct answer
+  [ok  ] escalate: [bank_orphan_setl_7_017] Unidentified remitter and no matchi high   
+         escalated to a human, which is a correct answer
+  [ -- ] match setl_7_018 <- bank_0018a                       high   
+         superseded: setl_7_018 was already resolved
+  [ -- ] match setl_7_018 <- bank_0018b                       high   
+         superseded: setl_7_018 was already resolved
+  [ok  ] escalate: [bank_0019_dup] Credit for 10204.83 exists with UTR700019 bu high   
+         escalated to a human, which is a correct answer
+  [ok  ] escalate: [bank_0020_dup] Credit for 10074.78 exists with UTR700020 bu high   
+         escalated to a human, which is a correct answer
+  [ -- ] match setl_7_021 <- bank_0021a                       high   
+         superseded: setl_7_021 was already resolved
+  [ -- ] match setl_7_021 <- bank_0021b                       high   
+         superseded: setl_7_021 was already resolved
+  [ -- ] match setl_7_023 <- bank_0023a                       high   
+         superseded: setl_7_023 was already resolved
+  [ -- ] match setl_7_023 <- bank_0023b                       high   
+         superseded: setl_7_023 was already resolved
+
+outcome
+------------------------------------------------------------------------------
+  auto-match before AI    70.8%
+  auto-match after AI     91.7%
+  proposals accepted     7
+  proposals REJECTED     0   (invalid — the verifier refused them)
+  superseded             10   (redundant restatements of a break already resolved)
+  escalated to a human   6
+  value resolved         INR 44680.42
+  invariant violations   0   (after booking every accepted adjustment)
+  event chain verified   True
+
+and the verifier refusing something genuinely invalid
+------------------------------------------------------------------------------
+  [NO  ] an adjustment for a discrepancy nobody found
+         INR 9999.00 does not correspond to any discrepancy the matcher found; an adjustment may 
+  [NO  ] an account outside the chart
+         account 9999 is not in the chart
+  [NO  ] credits that do not sum to the payout
+         bank line bank_0000 is already matched to another settlement; claiming it twice would cr
+
+  invariants still clean: True

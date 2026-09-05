@@ -225,6 +225,54 @@ other 48% is answered in about a millisecond with no network call at all.
 
 ---
 
+### Reconciliation — settlement ↔ bank ↔ ledger
+
+Three records, because collapsing them to two loses which one broke: the gap
+between the ledger and the settlement file is a disagreement about **fees**, the
+gap between settlement and bank is a disagreement about **money movement**.
+
+The deterministic matcher runs first, exactly as the authorization gate does.
+Two of the seven injected break kinds — a bank mangling the UTR, and a credit
+landing a day late — raise **no exception at all**, because the matcher's own
+fallback passes recover them. Only what genuinely needs an inference reaches the
+model.
+
+Measured on a 24-settlement book with 13 breaks injected:
+
+| | |
+|---|---|
+| Auto-match, deterministic only | **70.8%** |
+| Auto-match, after the agent | **91.7%** |
+| Value resolved | ₹44,680 |
+| Invariant violations after booking every accepted adjustment | **0** |
+| Escalated to a human | 6 |
+| Invalid proposals from the agent | **0** |
+
+The agent answers in a closed vocabulary of four shapes — `match`,
+`split_match`, `adjusting_entry`, `escalate` — and nothing it proposes reaches
+the book without passing a verifier that can refuse it. Four guards, each
+demonstrated live rather than asserted:
+
+- credits that do not sum **exactly** to the payout (no tolerance — a tolerance
+  hides a systematic fee error inside itself)
+- a credit already claimed by another settlement (the same money twice, which is
+  the error that makes a reconciliation worse than not doing one)
+- an account outside the chart
+- an adjustment for a discrepancy the matcher never found — **the agent may
+  resolve a real difference, never invent one**
+
+An accepted adjustment is then applied through the ordinary engine, so the full
+invariant suite runs on it and rolls it back if the book would not hold. That is
+the same code path guarding every other entry; the AI gets no special one.
+
+**One honest note on the run above.** A single broken payout produces three
+exceptions — the unmatched settlement and each unmatched credit — so the agent
+answers the same break three times. Once a `split_match` resolves it, the
+restatements are redundant. They are reported as *superseded*, not rejected;
+counting them as the verifier catching the AI would overstate what happened. The
+agent made zero invalid proposals. The guards are demonstrated separately, on
+deliberately fabricated ones.
+
 ## Named failure modes
 
 Published rather than tuned away. A measured 88.9% with a named failure mode
@@ -445,6 +493,7 @@ praman/
   evidence/    chain
   pg/          interface · mock · razorpay_pg
   data/        catalog · mandates · cases · buckets · injections · heldout
+  recon/       models · sources · matcher · agent · verify
   eval/        metrics · harness
   keyring.py · orchestrator.py · api.py
 tools/         demo · run_eval · build_dataset · live_check
@@ -464,5 +513,4 @@ Below the plan's cut line, and honestly absent rather than half-present:
   from is built and tested (`praman/evidence/chain.py`), and the demo files a
   representment packet. What is missing is the tool-runner loop that
   investigates autonomously.
-- **Reconciliation agent.** Settlement ↔ bank ↔ ledger matching.
 - **A UI.** The audit trail is exposed over HTTP and rendered in the terminal.

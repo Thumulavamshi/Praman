@@ -13,7 +13,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from . import events as E
-from .accounts import (BANK, CHARGEBACK_LOSSES, CHARGEBACK_PROVISION, GST_INPUT,
+from .accounts import (BANK, CHART, CHARGEBACK_LOSSES, CHARGEBACK_PROVISION, GST_INPUT,
                        GST_OUTPUT, MDR_EXPENSE, PG_RECEIVABLE, REFUNDS_PAYABLE,
                        RESERVE, SALES_REVENUE, TCS_CREDIT, TDS_RECEIVABLE)
 from .fees import DEFAULT_SCHEDULE, FeeSchedule, compute_fees, split_inclusive_gst
@@ -384,6 +384,33 @@ def h_reserve_released(state: LedgerState, ev) -> JournalEntry:
     ], memo=f"reserve {money_str(amount)} released")
 
 
+def h_recon_adjustment(state: LedgerState, ev) -> JournalEntry:
+    """A reconciliation adjustment. Balanced by construction, checked anyway.
+
+    Both legs and one amount come in, so the entry cannot be unbalanced. What
+    this handler enforces is that the accounts are real and the amount is
+    positive -- and then the engine's invariant suite gets the last word, which
+    is the whole point: an adjustment proposed by an AI lands only if the book
+    still holds afterwards.
+    """
+    p = ev.payload
+    amount = money(p["amount"])
+    if amount <= ZERO:
+        raise Rejected("adjustment must be positive", code="bad_amount")
+    for acct in (p["debit_account"], p["credit_account"]):
+        if acct not in CHART:
+            raise Rejected(f"account {acct} is not in the chart of accounts",
+                           code="unknown_account")
+    if p["debit_account"] == p["credit_account"]:
+        raise Rejected("an adjustment to and from the same account is a no-op",
+                       code="degenerate_entry")
+    memo = p.get("memo", "reconciliation adjustment")
+    return _entry(ev, [
+        leg(p["debit_account"], debit=amount, memo=memo),
+        leg(p["credit_account"], credit=amount, memo=memo),
+    ], memo=f"recon adjustment {money_str(amount)}: {memo}")
+
+
 def _schedule_from(spec) -> FeeSchedule:
     if not spec:
         return DEFAULT_SCHEDULE
@@ -415,4 +442,5 @@ HANDLERS = {
     E.SETTLEMENT_CREDITED: h_settlement_credited,
     E.RESERVE_HELD: h_reserve_held,
     E.RESERVE_RELEASED: h_reserve_released,
+    E.RECON_ADJUSTMENT: h_recon_adjustment,
 }
