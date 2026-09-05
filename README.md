@@ -280,6 +280,15 @@ said, so a reader can look at the sentence and the item and disagree.
 from a rule it would not be bucket C, and 30% of the score would be measuring a
 template we wrote.
 
+**One divergence between the mock and the real gateway was found by running
+it, and is worth stating.** The mock originally claimed that re-capturing an
+already-captured payment returns the same payment idempotently. Live Razorpay
+refuses it outright: `BAD_REQUEST_ERROR: This payment has already been
+captured`. The mock now refuses it too. The safety property is unchanged and
+arguably stronger — a refusal cannot double-charge either — but it means
+re-capture is not a retry strategy, and the same run exposed that
+`Praman.purchase()` was not idempotent for the agent that calls it. It is now.
+
 **The payment gateway is mocked by default.** `api.razorpay.com` is blocked by
 the egress policy of the environment this was built in — established in Phase 0
 before a line of gateway code was written, which is why the interface was fixed

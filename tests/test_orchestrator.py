@@ -47,6 +47,49 @@ def test_an_allowed_purchase_captures_and_books(praman):
     assert check_all(st) == []
 
 
+def test_a_retried_purchase_returns_the_first_one_instead_of_charging_again(praman):
+    """Agent-retry safety at the agent's own entry point.
+
+    The ledger's seen-gate cannot catch this: a second attempt reaches the
+    gateway, gets a NEW payment id, and so arrives as a genuinely new event.
+    Idempotency has to be keyed on what the agent repeats -- the proposal.
+    """
+    praman.register_mandate(variant("reference"))
+    p = prop(pid="same_cart")
+    first = praman.purchase(p)
+    assert first.captured
+
+    again = praman.purchase(p)
+    assert again.payment_id == first.payment_id
+    assert "already captured" in again.reason
+    assert len(praman.gateway.payments) == 1        # no second charge
+    assert len(praman.engine.state.payments) == 1
+    assert check_all(praman.engine.state) == []
+
+
+def test_a_retried_purchase_does_not_mint_a_second_decision(praman):
+    """A duplicate decision in the chain would misrepresent the audit trail."""
+    praman.register_mandate(variant("reference"))
+    p = prop(pid="same_cart")
+    first = praman.purchase(p)
+    praman.purchase(p)
+    assert len(praman.gate.chain) == 1
+    assert praman.gate.chain.verify()[0]
+
+
+def test_a_refused_purchase_IS_re_decided_on_retry(praman):
+    """A refusal is not pinned: circumstances legitimately change.
+
+    A refund may free the period cap between attempts. Short-circuiting a BLOCK
+    the way a capture is short-circuited would make the gate stale.
+    """
+    praman.register_mandate(variant("reference"))
+    p = prop("4800.00", "alcohol", "mch_spiritsco", pid="booze")
+    assert praman.purchase(p).verdict == "BLOCK"
+    assert praman.purchase(p).verdict == "BLOCK"
+    assert len(praman.gate.chain) == 2      # decided again, not replayed
+
+
 def test_a_blocked_purchase_never_reaches_the_gateway(praman):
     praman.register_mandate(variant("reference"))
     out = praman.purchase(prop("4800.00", "alcohol", "mch_spiritsco"))

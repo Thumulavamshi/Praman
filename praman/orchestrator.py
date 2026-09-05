@@ -115,6 +115,32 @@ class Praman:
                        f"agent purchase, it is an unauthorized one",
                 cited_clause="mandate_id")
 
+        # 0. the agent-facing seen-gate. Agents retry aggressively, and a
+        # retried purchase() previously minted a fresh decision, a fresh order
+        # and a SECOND capture -- a real double charge, in the one place the
+        # project claims retry safety loudest.
+        #
+        # The ledger's seen-gate cannot catch this: the second attempt arrives
+        # with a new payment id, so it is a genuinely new event. Idempotency has
+        # to be keyed on what the agent repeats, which is the proposal.
+        #
+        # Only a captured proposal short-circuits. A BLOCK or STEP_UP is
+        # re-decided on purpose: a refund may have freed the period cap, or a
+        # human may have approved in between, and pinning the old refusal would
+        # make the gate stale.
+        prior = next((r for r in self.engine.state.payments.values()
+                      if r.proposal_id == proposal.proposal_id), None)
+        if prior is not None:
+            return PurchaseOutcome(
+                verdict="ALLOW", decision_id=prior.decision_id,
+                proposal_id=proposal.proposal_id, payment_id=prior.payment_id,
+                order_id=prior.order_id,
+                captured_amount=money_str(prior.amount),
+                reason=f"proposal {proposal.proposal_id} was already captured as "
+                       f"{prior.payment_id}; returning that rather than charging "
+                       f"again",
+                cited_clause="idempotent_retry")
+
         results = []
 
         # 1. the cart the agent proposed, logged before anything judges it

@@ -267,11 +267,19 @@ def main():
             cap = p
             ok(f"already {p.status}; skipping capture")
 
-        again = gw.capture_payment(p.id, to_rupees(p.amount))
-        if again.id == cap.id:
-            ok("re-capture is idempotent — an agent retry cannot double-charge")
-        else:
-            bad("re-capture produced a different payment; retries are NOT safe")
+        # Razorpay REFUSES a second capture rather than answering idempotently.
+        # A refusal is the stronger guarantee -- it cannot double-charge either --
+        # so the refusal is the pass condition here, and a silent success would
+        # be the alarming outcome.
+        try:
+            gw.capture_payment(p.id, to_rupees(p.amount))
+            bad("a second capture was ACCEPTED — check the dashboard for a "
+                "double charge, and do not rely on re-capture being safe")
+        except Exception as e:                          # noqa: BLE001
+            if "already been captured" in str(e) or "already captured" in str(e):
+                ok("re-capture refused — an agent retry cannot double-charge")
+            else:
+                bad(f"re-capture failed for an unexpected reason: {e}")
 
         half = to_rupees(p.amount // 2)
         r = gw.refund(p.id, half, notes={"reason": "praman_check"})

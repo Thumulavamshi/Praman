@@ -32,12 +32,23 @@ def test_an_order_carries_the_mandate_and_decision_into_the_gateway():
     assert o.notes["decision_id"] == "dec_1"
 
 
-def test_capturing_twice_does_not_charge_twice(gw):
+def test_a_second_capture_is_refused_exactly_as_the_live_gateway_refuses_it(gw):
+    """Verified against real Razorpay: it answers BAD_REQUEST_ERROR.
+
+    This test previously asserted the opposite -- that re-capture returns the
+    same payment idempotently -- because the mock was written on that
+    assumption. Running the live check disproved it. The safety property is
+    unchanged and if anything stronger: a refusal cannot double-charge either.
+    What it means is that re-capture is not a retry strategy, so Praman must not
+    use it as one, and Praman.purchase() does not.
+    """
     o = gw.create_order("500.00", "r")
     p = gw.simulate_payment(o)
     a = gw.capture_payment(p.id, "500.00")
-    b = gw.capture_payment(p.id, "500.00")
-    assert a.id == b.id and b.status == "captured"
+    assert a.status == "captured"
+
+    with pytest.raises(GatewayError, match="already been captured"):
+        gw.capture_payment(p.id, "500.00")
 
 
 def test_a_failed_payment_cannot_be_captured(gw):

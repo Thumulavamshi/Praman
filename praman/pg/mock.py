@@ -4,10 +4,11 @@ Object shapes, id prefixes, status strings and paise-denominated integer amounts
 all match the live API, so nothing downstream can tell the difference. Two
 things it deliberately keeps that a lazier mock would drop:
 
-  * **Idempotent capture.** Capturing an already-captured payment returns the
-    same payment rather than charging twice, which is what Razorpay does. A mock
-    that let a double-capture through would hide the exact failure mode the
-    engine's seen-gate exists to prevent, and the demo would prove nothing.
+  * **Re-capture is refused, exactly as the real gateway refuses it.** Verified
+    live: Razorpay answers "This payment has already been captured". An earlier
+    version of this mock returned the payment instead, and that divergence was
+    only caught by running the real thing -- which is the whole argument for
+    keeping the live check script around.
   * **Real refusals.** Capturing a failed payment, over-refunding, and capturing
     an amount that disagrees with the authorization all raise. A gateway that
     never says no makes every error path in the caller untested.
@@ -90,15 +91,20 @@ class MockRazorpay:
                                "this payment failed and cannot be captured")
         amount = to_paise(amount_rupees)
         if p.status == "captured":
-            # Razorpay is idempotent here, and so are we. An agent that retries
-            # a capture must not be charged twice by the gateway any more than
-            # it should be booked twice by the ledger.
-            if p.amount != amount:
-                raise GatewayError(
-                    "BAD_REQUEST_ERROR",
-                    f"payment already captured for {p.amount} paise, "
-                    f"cannot re-capture for {amount}")
-            return p
+            # CORRECTED against the live API, 2026-09-03. This mock previously
+            # returned the payment, on the assumption that Razorpay treats
+            # re-capture idempotently. It does not -- it answers
+            #   BAD_REQUEST_ERROR: This payment has already been captured
+            # and a mock that is kinder than the gateway is worse than no mock,
+            # because it lets code pass here and fail in production.
+            #
+            # The safety property still holds, and more strongly: a refusal
+            # cannot double-charge either. What changes is that the CALLER must
+            # not treat re-capture as a retry strategy. Praman does not -- see
+            # Praman.purchase(), which returns the prior outcome rather than
+            # reaching the gateway a second time.
+            raise GatewayError(
+                "BAD_REQUEST_ERROR", "This payment has already been captured")
         if amount != p.amount:
             raise GatewayError(
                 "BAD_REQUEST_ERROR",
