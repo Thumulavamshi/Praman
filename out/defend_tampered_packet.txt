@@ -1,0 +1,55 @@
+==============================================================================
+PHASE 5 — DISPUTE DEFENDER   [scenario: tampered]
+==============================================================================
+
+  The cardholder says: "I didn't authorize that, my agent did."
+  payment pay_db5b5f8f4d3e27   chargeback cb_b7b04a6f0342
+
+------------------------------------------------------------------------------
+  the agent's investigation:
+    mandate_chain      found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    decision_record    found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    proposed_cart      found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    money_trail        found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    integrity_check    found      {}
+------------------------------------------------------------------------------
+
+investigation: 5 tool calls, 16.3s, gemini-3-flash-preview
+REPRESENTMENT PACKET
+==========================================================================
+payment            pay_db5b5f8f4d3e27
+chargeback         cb_b7b04a6f0342
+recommended        ESCALATE
+citations verified 8/8  (100%)
+
+SUMMARY
+--------------------------------------------------------------------------
+This purchase of groceries was executed by the cardholder's AI agent under a valid, signed mandate that explicitly permits automated grocery shopping. The transaction amount was well within the delegated spending limits and categories established by the cardholder.
+
+FACTS, EACH CHECKED AGAINST THE RECORD IT CITES
+--------------------------------------------------------------------------
+  [ok] The cardholder issued a formal mandate granting the agent authority to purchase groceries.
+       You can order my groceries and household things.   [mandate mnd_reference]
+  [ok] The mandate was active and signed by the principal at the time of the transaction.
+       true   [mandate mnd_reference]
+  [ok] The agent was authorized to spend up to a specific limit per transaction.
+       2000.00   [mandate mnd_reference]
+  [ok] The actual transaction amount was significantly lower than the cardholder's cap.
+       357.00   [decision dec_478edb8a66dc415c]
+  [ok] The gateway verified the transaction fell within the specific clause for transaction caps.
+       per_transaction_cap   [decision dec_478edb8a66dc415c]
+  [ok] The purchase consisted of items in the permitted category of groceries.
+       groceries   [ledger prop_GRO-0001_GRO-0006]
+  [ok] The decision engine issued an explicit allow verdict for this agent-led purchase.
+       ALLOW   [decision dec_478edb8a66dc415c]
+  [ok] The automated system confirmed the bounds check passed without requiring human intervention.
+       PASS   [decision dec_478edb8a66dc415c]
+
+ARGUMENT
+--------------------------------------------------------------------------
+The cardholder claims this transaction was unauthorized because it was performed by an AI agent. However, the cardholder explicitly delegated this authority via a signed digital mandate (mnd_reference) which states, 'You can order my groceries and household things.' This mandate was active and had not been revoked at the time of purchase. The transaction total of 357.00 INR is well below the 2000.00 INR per-transaction cap and the 1500.00 INR threshold for manual step-up. As the purchase consisted strictly of groceries (Atta and Milk) from an established merchant, it falls entirely within the scope of authority the cardholder provided. The merchant acted in good faith on a valid delegation of authority.
+
+WEAKNESSES AN ISSUER WILL ATTACK
+--------------------------------------------------------------------------
+  - The event log failed integrity verification at the proposal stage (ev_prop_prop_GRO-0001_GRO-0006).
+  - The integrity report indicates the event log is generally unverified despite the decision chain being intact.

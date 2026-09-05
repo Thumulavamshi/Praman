@@ -228,19 +228,37 @@ class DisputeDefender:
             # structured answer, so it is a single slow exchange. Observed: the
             # egress tunnel closing mid-exchange before the first byte came
             # back. Streaming keeps bytes moving and the connection alive.
+            # thinking_budget=0 on purpose. Gemini counts reasoning tokens
+            # against max_output_tokens, and this call is serialisation, not
+            # judgment -- the model already reasoned over the evidence during
+            # the investigation. Leaving thinking on spent the budget before the
+            # JSON was finished and returned a packet truncated mid-string at
+            # 578 characters, which surfaces as an opaque pydantic parse error.
             packet_cfg = types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
                 response_mime_type="application/json",
                 response_schema=RepresentmentPacket,
-                max_output_tokens=4096)
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                max_output_tokens=8192)
 
             def emit(c):
-                chunks = []
+                chunks, finish = [], None
                 for chunk in c.models.generate_content_stream(
                         model=self.model, contents=contents, config=packet_cfg):
                     if getattr(chunk, "text", None):
                         chunks.append(chunk.text)
-                return "".join(chunks)
+                    for cand in (getattr(chunk, "candidates", None) or []):
+                        if getattr(cand, "finish_reason", None):
+                            finish = str(cand.finish_reason)
+                raw = "".join(chunks)
+                # Say what actually went wrong. A truncated packet is a budget
+                # problem, and reporting it as a JSON syntax error sends the
+                # reader looking in entirely the wrong place.
+                if finish and "MAX_TOKENS" in finish.upper():
+                    raise ValueError(
+                        f"the packet was cut off by max_output_tokens after "
+                        f"{len(raw)} characters; raise it or shorten the digest")
+                return raw
 
             raw = call_with_rotation(self.ring, emit, max_attempts=5)
             packet = RepresentmentPacket.model_validate_json(raw.strip())

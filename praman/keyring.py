@@ -299,7 +299,7 @@ def load_keys_from_env() -> list[str]:
 
 
 def call_with_rotation(ring: GeminiKeyRing, fn, *, max_attempts: int | None = None,
-                       on_retry=None):
+                       max_transient: int = 10, on_retry=None):
     """Run ``fn(client)`` against the pool, rotating and backing off on 429.
 
     ``fn`` is called with a live client and must be idempotent -- a retry after a
@@ -313,7 +313,17 @@ def call_with_rotation(ring: GeminiKeyRing, fn, *, max_attempts: int | None = No
 
     attempts = max_attempts or max(6, len(ring) * 3)
     last: Exception | None = None
-    for attempt in range(attempts):
+    # A "model is busy" 503 is not the caller's fault, not the key's fault, and
+    # not a quota event -- it is congestion that clears. Counting it against the
+    # same budget as a rate limit meant a burst of them could kill an
+    # investigation that had already spent five tool calls. Transient failures
+    # get their own, much more generous budget.
+    transient_left = max_transient
+    attempt = -1
+    while True:
+        attempt += 1
+        if attempt >= attempts:
+            break
         try:
             client, state = ring.acquire()
         except AllKeysExhausted:
@@ -324,9 +334,13 @@ def call_with_rotation(ring: GeminiKeyRing, fn, *, max_attempts: int | None = No
             # The connection died before the API could answer -- not a quota
             # problem, not a bad request, just the network. Observed killing a
             # dispute investigation that had already spent five tool calls, so
-            # it is worth a retry rather than losing that work.
+            # it is worth a retry rather than losing that work, and it draws on
+            # the transient allowance rather than the attempt budget.
             last = exc
-            delay = min(2 ** attempt, 20) * (0.5 + random.random())
+            if transient_left > 0:
+                transient_left -= 1
+                attempt -= 1
+            delay = min(2 ** max(attempt, 0), 20) * (0.5 + random.random())
             if on_retry:
                 on_retry(state, f"{exc.__class__.__name__}; retrying in "
                                 f"{delay:.1f}s")
@@ -352,9 +366,13 @@ def call_with_rotation(ring: GeminiKeyRing, fn, *, max_attempts: int | None = No
                 continue
 
             # A 503 is the model being busy, not the key being bad, so it is
-            # deliberately not counted against the key's failure tally.
+            # deliberately not counted against the key's failure tally -- nor
+            # against the attempt budget, while its own allowance lasts.
             if rate_limited:
                 ring.mark_transient(state)
+            elif transient_left > 0:
+                transient_left -= 1
+                attempt -= 1
             told = retry_delay_from(message)
             delay = (told + random.random()
                      if told is not None

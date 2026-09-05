@@ -33,6 +33,19 @@ is reported separately, since a trivial non-model baseline scores 100% on it.
 | `generated_degraded_credit_exhausted.json` | 302 of 500 adjudications failed on an exhausted Anthropic balance mid-run. Accuracy from it is meaningless. It is kept because it shows the fail-closed path being *exercised* rather than asserted: 302 adjudicator failures produced **302 step-ups and zero false allows**. |
 | `heldout_gemini.json` | 61 of 100 failed on exhausted Gemini quota. This file also marks a mistake: it **overwrote a valid `gemini-3.5-flash` run** that had scored 76.0%. `save_run` now rotates an existing file aside instead of replacing it, but that measurement is gone. |
 
+## Live dispute-defender runs (Phase 5)
+
+Both produced by `tools/defend_demo.py` against `gemini-3-flash-preview`, and
+both are the whole point of the phase rather than a happy-path screenshot.
+
+| File | Verdict | |
+|---|---|---|
+| `defend_clean_packet.txt` | `REPRESENT` | 8/8 citations verified. The agent also named a real weakness unprompted — the mandate's night-time soft constraint — which is what an issuer would attack first. |
+| `defend_tampered_packet.txt` | `ESCALATE` | The event log was altered before the run. `integrity_check` caught it and the agent **recommended against filing**, naming the exact tampered event id. |
+
+The second one is the one to show. A defender that only ever says "represent"
+is a template; one that reads the record and declines is doing the job.
+
 ## Working files
 
 | File | |

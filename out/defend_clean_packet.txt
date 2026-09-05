@@ -1,0 +1,54 @@
+==============================================================================
+PHASE 5 — DISPUTE DEFENDER   [scenario: clean]
+==============================================================================
+
+  The cardholder says: "I didn't authorize that, my agent did."
+  payment pay_db5b5f8f4d3e27   chargeback cb_aa72120d09c3
+
+------------------------------------------------------------------------------
+  the agent's investigation:
+    mandate_chain      found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    decision_record    found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    proposed_cart      found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    money_trail        found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    integrity_check    found      {}
+------------------------------------------------------------------------------
+
+investigation: 5 tool calls, 20.1s, gemini-3-flash-preview
+REPRESENTMENT PACKET
+==========================================================================
+payment            pay_db5b5f8f4d3e27
+chargeback         cb_aa72120d09c3
+recommended        REPRESENT
+citations verified 8/8  (100%)
+
+SUMMARY
+--------------------------------------------------------------------------
+This purchase of groceries was conducted by the cardholder's designated AI shopping agent, which operated within the explicit financial and categorical bounds set by the cardholder's mandate. The transaction was fully authorized through the cardholder's delegated authority, and the merchant is entitled to the funds as the agent's actions were compliant with its instructions.
+
+FACTS, EACH CHECKED AGAINST THE RECORD IT CITES
+--------------------------------------------------------------------------
+  [ok] The cardholder granted the agent authority to purchase groceries and household items.
+       You can order my groceries and household things.   [mandate mnd_reference]
+  [ok] The cardholder set a per-transaction limit for the agent.
+       2000.00   [mandate mnd_reference]
+  [ok] The specific purchase amount was within the delegated per-transaction cap.
+       357.00   [decision dec_6e4b104b5bae4ace]
+  [ok] The automated gate confirmed the transaction was within every bound the mandate sets.
+       PASS   [decision dec_6e4b104b5bae4ace]
+  [ok] The purchased items were categorized correctly as groceries.
+       groceries   [ledger prop_GRO-0001_GRO-0006]
+  [ok] The transaction was formally allowed by the AI gate's decision engine.
+       ALLOW   [decision dec_6e4b104b5bae4ace]
+  [ok] The integrity check confirmed that the decision chain and event log are verified and uncompromised.
+       true   [integrity integrity]
+  [ok] The mandate governing the agent's authority was active and not revoked at the time of purchase.
+       false   [mandate mnd_reference]
+
+ARGUMENT
+--------------------------------------------------------------------------
+While the cardholder claims they did not personally authorize this transaction, it was authorized via a valid and active delegation of authority to their AI agent, agent_claude_shopper_v1. The mandate 'mnd_reference' explicitly permits the agent to 'order my groceries' with a cap of '2000.00'. This transaction for '357.00' consisted of staple groceries ('Aashirvaad Whole Wheat Atta' and 'Amul Taaza Toned Milk') which fit the 'groceries' category allowed by the user. Our records, verified for integrity, show the automated gateway ('dec_6e4b104b5bae4ace') correctly evaluated these parameters and issued an 'ALLOW' verdict. The cardholder's delegation remained in force and the agent acted strictly within the 'per_transaction_cap'. Therefore, the merchant processed a valid transaction authorized by the cardholder's legal representative (the agent).
+
+WEAKNESSES AN ISSUER WILL ATTACK
+--------------------------------------------------------------------------
+  - The cardholder's mandate includes a subjective 'soft constraint' regarding not ordering in the middle of the night, though the transaction timestamp of 17:03:06 UTC is generally considered daytime/evening in the cardholder's timezone.
