@@ -144,7 +144,7 @@ Per bucket:
 |---|---|---|---|---|
 | **A** clearly in scope | 15 | 100.0% | **100.0%** | ordinary purchases; a false block here is a lost sale |
 | **B** hard bound violated | 18 | 100.0% | **100.0%** | decided deterministically, model never consulted |
-| **C** genuinely ambiguous | 49 | 59.2% | **63.3%** | where the real score lives |
+| **C** genuinely ambiguous | 49 | 59.2% | **63.3%** | where the real score lives (49.0% without a model) |
 | **D** adversarial | 18 | 83.3% | **83.3%** | injected instructions in seller text |
 
 **Read this as "comparable", not as a ranking.** At n=100 a two-point gap is
@@ -154,8 +154,8 @@ model, a cheap fast model is viable for the semantic layer, and **zero false
 allows held on every model tested** — which is the property the whole design
 exists to protect.
 
-**The deterministic checker alone scores 46.9% on bucket C.** The adjudicator
-adds ~12 points on the only bucket that is hard. That gap is the entire argument
+**The deterministic checker alone scores 49.0% on bucket C.** The adjudicator
+adds ~14 points on the only bucket that is hard. That gap is the entire argument
 for putting a model in the path, and it is small enough to be honest about.
 
 ### Why the generated set is reported separately, and last
@@ -441,6 +441,27 @@ and labelled accordingly.
 
 If the pool runs dry mid-run the gate degrades to `STEP_UP`, never to `ALLOW`.
 
+## The audit trail page
+
+The trust story is a record, and a record nobody can see is a claim. `/ui`
+renders it: what the human delegated, what the gate decided and on which clause,
+one payment's hash-linked trail end to end, the trial balance, and where the
+adjudicator actually earns its place.
+
+```bash
+python tools/build_ui.py     # one self-contained file in out/
+PRAMAN_OFFLINE=1 uvicorn praman.api:app   # the same page, live, at /ui
+```
+
+Every figure on it is read from the ledger, the decision chain, or a stored
+evaluation run. Nothing is typed in — the same rule the dispute packet follows,
+for the same reason. It opens from disk with the network off, because a demo
+that needs a server running is a demo that fails on stage.
+
+The bucket chart shows the deterministic baseline beside the model, including
+**bucket D, where the model is slightly worse than bounds alone** (88.9% →
+83.3%). A page that only showed where the AI helped would be marketing.
+
 ## Running it
 
 ```bash
@@ -494,9 +515,11 @@ praman/
   pg/          interface · mock · razorpay_pg
   data/        catalog · mandates · cases · buckets · injections · heldout
   recon/       models · sources · matcher · agent · verify
+  ui/          build · template
   eval/        metrics · harness
   keyring.py · orchestrator.py · api.py
-tools/         demo · run_eval · build_dataset · live_check
+tools/         demo · run_eval · build_dataset · build_ui ·
+               defend_demo · recon_demo · razorpay_check · check_keys
 docs/          taxonomy.md · injection-seeds.md
 ```
 
@@ -513,4 +536,4 @@ Below the plan's cut line, and honestly absent rather than half-present:
   from is built and tested (`praman/evidence/chain.py`), and the demo files a
   representment packet. What is missing is the tool-runner loop that
   investigates autonomously.
-- **A UI.** The audit trail is exposed over HTTP and rendered in the terminal.
+

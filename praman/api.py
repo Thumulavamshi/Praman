@@ -17,6 +17,7 @@ import os
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from .data.mandates import ISSUER
@@ -165,6 +166,17 @@ def build_app(praman: Praman | None = None) -> FastAPI:
             "gaps": b.gaps,
             "rendered": b.render(),
         }
+
+    @app.get("/ui", response_class=HTMLResponse)
+    def ui() -> str:
+        """The audit trail, rendered from a real run.
+
+        The same page tools/build_ui.py writes to disk, so the demo works with
+        the network off and the live path shows the identical thing. A demo that
+        needs a server running is a demo that fails on stage.
+        """
+        from .ui.build import build
+        return build()
 
     @app.get("/health")
     def health() -> dict:
