@@ -49,21 +49,35 @@ class RepresentmentPacket(BaseModel):
     chargeback_id: str
     summary: str = Field(
         description="Two or three sentences: what was bought, under whose "
-                    "authority, and why the merchant is entitled to the money.")
+                    "authority, and what state the record is in. Neutral -- do "
+                    "NOT assert the merchant is entitled to the money here. "
+                    "That is a conclusion, it is decided in "
+                    "recommended_action below, and a summary that presumes it "
+                    "will contradict a packet that escalates.")
     claims: list[Claim] = Field(
         description="Every fact the argument rests on, each citing its record. "
                     "Six to twelve. Do not assert anything you did not read "
                     "from a tool.")
-    argument: str = Field(
-        description="The representment argument itself, addressed to the "
-                    "issuer. Answer the cardholder's actual claim -- that they "
-                    "did not authorise the purchase, their agent did -- rather "
-                    "than asserting they did authorise it.")
+    # recommended_action comes BEFORE argument, deliberately. Structured output
+    # is generated in schema order, so putting the conclusion first makes the
+    # prose follow from it. With argument first, the model wrote a confident
+    # case for representment and then recommended escalate -- a packet whose
+    # own two halves disagreed, which is exactly what an issuer would seize on.
     recommended_action: Literal["represent", "accept_liability", "escalate"] = Field(
-        description="represent if the evidence supports defending the charge; "
+        description="Decide this FIRST, before writing the argument. "
+                    "represent if the evidence supports defending the charge; "
                     "accept_liability if it does not and the merchant should "
-                    "take the loss; escalate if the record is incomplete or "
-                    "contradictory and a human must look.")
+                    "take the loss; escalate if the record is incomplete, "
+                    "unverifiable or self-contradictory and a human must look.")
+    argument: str = Field(
+        description="The case, addressed to the issuer, and it MUST follow the "
+                    "recommendation you just made. If representing: answer the "
+                    "cardholder's actual claim -- that they did not authorise "
+                    "the purchase, their agent did -- rather than asserting "
+                    "they did. If escalating or accepting liability: say what "
+                    "is wrong with the record and why the merchant cannot rely "
+                    "on it. Do not argue for representment in a packet that "
+                    "does not recommend it.")
     weaknesses: list[str] = Field(
         description="Anything in this record that a competent issuer would "
                     "attack. State them. A packet that hides its weak points "

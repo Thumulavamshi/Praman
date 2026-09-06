@@ -84,6 +84,19 @@ accept_liability. A merchant who files a losing representment pays the fee and \
 loses anyway. If the record is incomplete or contradicts itself, recommend \
 escalate. Those are correct answers, not failures.
 
+THE ARGUMENT MUST FOLLOW THE RECOMMENDATION
+
+Decide the recommendation first, then write the argument to match it. A packet \
+that recommends escalate and then argues confidently for representment \
+contradicts itself, and an issuer reading it will trust neither half.
+
+If you are escalating, the argument is not a defence -- it is a statement of \
+what is wrong with the record and why the merchant cannot yet rely on it. \
+Integrity failures belong at the TOP of that argument, not buried in the \
+weaknesses list: if the hash chain does not verify, nothing else in the packet \
+can be relied upon, and saying so plainly is the honest thing a merchant needs \
+to hear before they file anything.
+
 List the weaknesses honestly. An issuer will find them; a packet that names \
 them first reads as candid rather than caught out.\
 """

@@ -3,8 +3,9 @@ PHASE 5 — DISPUTE DEFENDER   [scenario: clean]
 ==============================================================================
 
   The cardholder says: "I didn't authorize that, my agent did."
-  payment pay_db5b5f8f4d3e27   chargeback cb_aa72120d09c3
+  payment pay_db5b5f8f4d3e27   chargeback cb_f0a834c3d6f5
 
+Direct use of automatic function calling (AFC) in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream. Similarly, direct use of AFC in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message.
 ------------------------------------------------------------------------------
   the agent's investigation:
     mandate_chain      found      {'payment_id': 'pay_db5b5f8f4d3e27'}
@@ -14,41 +15,45 @@ PHASE 5 — DISPUTE DEFENDER   [scenario: clean]
     integrity_check    found      {}
 ------------------------------------------------------------------------------
 
-investigation: 5 tool calls, 20.1s, gemini-3-flash-preview
+investigation: 5 tool calls, 13.5s, gemini-3-flash-preview
 REPRESENTMENT PACKET
 ==========================================================================
 payment            pay_db5b5f8f4d3e27
-chargeback         cb_aa72120d09c3
+chargeback         cb_f0a834c3d6f5
 recommended        REPRESENT
-citations verified 8/8  (100%)
+citations verified 10/10  (100%)
 
 SUMMARY
 --------------------------------------------------------------------------
-This purchase of groceries was conducted by the cardholder's designated AI shopping agent, which operated within the explicit financial and categorical bounds set by the cardholder's mandate. The transaction was fully authorized through the cardholder's delegated authority, and the merchant is entitled to the funds as the agent's actions were compliant with its instructions.
+An AI agent purchased groceries (wheat flour and milk) for INR 357.00 under a mandate granted by the cardholder. The record is complete and the integrity check confirms that the transaction was processed according to the cardholder's active delegation rules.
 
 FACTS, EACH CHECKED AGAINST THE RECORD IT CITES
 --------------------------------------------------------------------------
-  [ok] The cardholder granted the agent authority to purchase groceries and household items.
-       You can order my groceries and household things.   [mandate mnd_reference]
-  [ok] The cardholder set a per-transaction limit for the agent.
+  [ok] The cardholder delegated purchasing authority to an AI agent.
+       agent_claude_shopper_v1   [mandate mnd_reference]
+  [ok] The mandate explicitly permits purchases in the grocery category.
+       groceries   [mandate mnd_reference]
+  [ok] The single order limit set by the cardholder is two thousand rupees.
        2000.00   [mandate mnd_reference]
-  [ok] The specific purchase amount was within the delegated per-transaction cap.
-       357.00   [decision dec_6e4b104b5bae4ace]
-  [ok] The automated gate confirmed the transaction was within every bound the mandate sets.
-       PASS   [decision dec_6e4b104b5bae4ace]
-  [ok] The purchased items were categorized correctly as groceries.
-       groceries   [ledger prop_GRO-0001_GRO-0006]
-  [ok] The transaction was formally allowed by the AI gate's decision engine.
-       ALLOW   [decision dec_6e4b104b5bae4ace]
-  [ok] The integrity check confirmed that the decision chain and event log are verified and uncompromised.
+  [ok] The transaction amount was within the cardholder's defined limits.
+       357.00   [ledger ev_cap_pay_db5b5f8f4d3e27]
+  [ok] The gate decision system confirmed the transaction passed all mandate bounds.
+       PASS   [decision dec_0b2a2c19ece0447a]
+  [ok] The gate decision system formally allowed the purchase to proceed.
+       ALLOW   [decision dec_0b2a2c19ece0447a]
+  [ok] The cryptographic integrity of the decision chain has been verified.
        true   [integrity integrity]
-  [ok] The mandate governing the agent's authority was active and not revoked at the time of purchase.
+  [ok] The event log integrity has been verified.
+       true   [integrity integrity]
+  [ok] The mandate was active and not revoked at the time of purchase.
        false   [mandate mnd_reference]
+  [ok] The items purchased were registered under the 'groceries' category.
+       groceries   [event prop_GRO-0001_GRO-0006]
 
 ARGUMENT
 --------------------------------------------------------------------------
-While the cardholder claims they did not personally authorize this transaction, it was authorized via a valid and active delegation of authority to their AI agent, agent_claude_shopper_v1. The mandate 'mnd_reference' explicitly permits the agent to 'order my groceries' with a cap of '2000.00'. This transaction for '357.00' consisted of staple groceries ('Aashirvaad Whole Wheat Atta' and 'Amul Taaza Toned Milk') which fit the 'groceries' category allowed by the user. Our records, verified for integrity, show the automated gateway ('dec_6e4b104b5bae4ace') correctly evaluated these parameters and issued an 'ALLOW' verdict. The cardholder's delegation remained in force and the agent acted strictly within the 'per_transaction_cap'. Therefore, the merchant processed a valid transaction authorized by the cardholder's legal representative (the agent).
+The cardholder's claim that they did not personally click 'buy' is understood, but the transaction is valid because it was executed by an AI agent under a legally binding and active delegation of authority. The merchant has provided evidence that the purchase of groceries (Aashirvaad Atta and Amul Milk) totaling INR 357.00 fell squarely within the 'per_transaction_cap' of 2000.00 and the 'groceries' category permitted by the cardholder in mandate mnd_reference. The transaction was processed after the automated gate decision (dec_0b2a2c19ece0447a) verified these bounds. As the merchant can prove the purchase was within the scope of authority the cardholder themselves delegated, the merchant is entitled to the funds.
 
 WEAKNESSES AN ISSUER WILL ATTACK
 --------------------------------------------------------------------------
-  - The cardholder's mandate includes a subjective 'soft constraint' regarding not ordering in the middle of the night, though the transaction timestamp of 17:03:06 UTC is generally considered daytime/evening in the cardholder's timezone.
+  - The merchant description for the items in the proposal is blank, though titles and categories are clearly defined.
