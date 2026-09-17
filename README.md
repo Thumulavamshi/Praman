@@ -158,6 +158,28 @@ exists to protect.
 adds ~14 points on the only bucket that is hard. That gap is the entire argument
 for putting a model in the path, and it is small enough to be honest about.
 
+### The headline model is `gemini-3-flash-preview`
+
+Not because it edged opus by two points — at n=100 that is noise, as the table
+says. Because it is the model that can still be re-run. A published number whose
+run cannot be reproduced is a claim, and the Anthropic balance behind the
+`claude-opus-5` column is spent. Every figure quoted as current is measured on
+gemini-3-flash-preview; the opus column stays as a cross-model check, which is
+the thing it was always for.
+
+```bash
+PRAMAN_GEMINI_MODEL=gemini-3-flash-preview \
+  python tools/run_eval.py --heldout --provider gemini
+```
+
+### Numbers above predate the current adjudicator prompt
+
+The system prompt was revised after these runs — see `## Step-up recall` below.
+Every run written from now on records a `prompt_fingerprint` in its meta, and
+`--regrade` says so when a stored run's fingerprint differs from the code in
+front of you. The committed runs predate the fingerprint, so they carry none;
+that is itself the signal that they are older than the current prompt.
+
 ### Why the generated set is reported separately, and last
 
 The 500 generated A/B/D cases score **100.0% under a trivial non-model
@@ -528,6 +550,54 @@ textbook `Decimal` discipline, every docstring rewritten for this domain.
 
 ---
 
+## Step-up recall, and the development slice
+
+The weakest measured number in this project is STEP_UP recall: of 23 held-out
+cases whose authored answer is "ask the human", `claude-opus-5` caught 3. That
+is 13.0% — **identical to the deterministic checker with no model at all**.
+`gemini-3-flash-preview` caught 5. On ALLOW and BLOCK the adjudicator clearly
+earns its place; on knowing when to defer, it did not.
+
+Two things caused it, and they are different in kind.
+
+**The prompt was pushing against deferral.** It said *"do not use it to avoid a
+call you can actually make"* and gave no counterweight, so the model resolved
+poised cases confidently. It also carried no cost model, leaving it no basis for
+"guessing wrong is expensive here". Both are fixed: the instruction now names
+*resolving* a poised case as the second failure mode alongside hedging, prices
+the three answers against each other, and gives a concrete test — if reaching
+your verdict needed a **bridge** the person did not write, hand them the bridge.
+
+**The prompt was pre-answering held-out cases.** It asserted that "batteries and
+light bulbs bought at a supermarket... are plainly household restocking". The
+held-out slice labels exactly those two cases STEP_UP under the narrower
+*"cleaning things, kitchen consumables"* delegation. The model was instructed
+into 2 of its 20 misses. That assertion is gone — deleting a pre-answer is
+removing a leak, not tuning against the answer key.
+
+### Why there is now a development slice
+
+Every bucket-C case was held out, which left nowhere to iterate: any attempt to
+improve the adjudicator had to be measured on the one slice whose value comes
+from never having been measured against. `praman/data/devset.py` holds 31 new
+ambiguous cases, authored by the same method — ambiguity first, mandate second,
+paired so that one phrase flips the answer — and reported separately:
+
+```bash
+python tools/label_dev.py                 # record YOUR label on each case
+python tools/run_eval.py --dev            # iterate here, as often as you like
+```
+
+The labels that ship in that file are a **model's proposals**. Tuning a model
+against labels the model wrote is a closed loop that reports progress while
+learning nothing, so `--dev` prints how many cases still carry an unreviewed
+proposal and refuses to let that be mistaken for a measurement. The dev slice is
+never mixed into a normal run, and its report header says plainly that it is not
+the held-out number.
+
+The held-out slice stays unseen until a change is finished, and then it is spent
+once.
+
 ## What is not built
 
 Honestly absent rather than half-present. All three phases below the plan's cut
@@ -550,8 +620,8 @@ not.
   listed this as an open question and it stayed open. The demo shows STEP_UP
   verdicts being reached and never shows one being resolved.
 
-- **STEP_UP recall is the weakest measured number, and the adjudicator does not
-  currently earn its place on it.** 23 held-out cases have "ask the human" as
+- **STEP_UP recall is the weakest measured number, and as of the last measured
+  run the adjudicator did not earn its place on it.** 23 held-out cases have "ask the human" as
   the authored answer. `claude-opus-5` catches 3 of them — 13.0% recall, which
   is *exactly* what the deterministic checker scores with no model at all
   (`gemini-3-flash` catches 5, 21.7%). On ALLOW/BLOCK the model clearly adds

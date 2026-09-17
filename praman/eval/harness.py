@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
 
+from praman.gate.adjudicator import prompt_fingerprint
 from praman.data.cases import EvalCase
 from praman.gate.gate import Gate
 from praman.ledger.money import money
@@ -121,7 +122,9 @@ def save_run(path, results: list[CaseResult], meta: dict) -> None:
         p.rename(kept)
         print(f"  (existing run preserved as {kept.name})")
     payload = {
-        "meta": {**meta, "written_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")},
+        "meta": {**meta,
+                 "prompt_fingerprint": prompt_fingerprint(),
+                 "written_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")},
         "results": [{**asdict(r), "amount": str(r.amount)} for r in results],
     }
     p.write_text(json.dumps(payload, indent=2))

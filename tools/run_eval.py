@@ -21,7 +21,8 @@ load_dotenv(ROOT / ".env")
 from praman.data.cases import EvalCase
 from praman.eval.harness import regrade, run, save_run
 from praman.eval.metrics import exception_list, report
-from praman.gate.adjudicator import LLMAdjudicator, StaticAdjudicator
+from praman.gate.adjudicator import (LLMAdjudicator, StaticAdjudicator,
+                                     prompt_fingerprint)
 from praman.gate.gate import Gate
 from praman.data.mandates import ISSUER
 
@@ -71,17 +72,27 @@ def print_slice(s, indent="  "):
           f"p95 {ms(lat['model_consulted']['p95_ms'])} ms")
 
 
-def print_report(rep, results=None):
+def print_report(rep, results=None, dev=False):
     W = 78
     print("\n" + "=" * W)
     print("PRAMAN — AUTHORIZATION GATE EVALUATION")
     print("=" * W)
 
-    print("\nHELD-OUT, HAND-LABELLED SLICE")
-    print("-" * W)
-    print("  Labels authored individually, one case at a time, never used to "
-          "tune a prompt.")
-    print("  This is the number to argue with.\n")
+    if dev:
+        # The two slices must never be confusable in the output. A dev number
+        # that reads "never used to tune a prompt" is the exact claim the dev
+        # slice exists to stop us making by accident.
+        print("\nDEVELOPMENT SLICE — TUNE AGAINST THIS")
+        print("-" * W)
+        print("  Iterate here as much as you like. This is NOT the held-out "
+              "number and\n  must never be published as one. The held-out "
+              "slice stays unseen until\n  the change is finished.\n")
+    else:
+        print("\nHELD-OUT, HAND-LABELLED SLICE")
+        print("-" * W)
+        print("  Labels authored individually, one case at a time, never used "
+              "to tune a prompt.")
+        print("  This is the number to argue with.\n")
     print_slice(rep["held_out_hand_labelled"])
     for b, s in rep.get("held_out_by_bucket", {}).items():
         print(f"\n  bucket {b}:")
@@ -143,6 +154,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--heldout", action="store_true")
     ap.add_argument("--generated", action="store_true")
+    ap.add_argument("--dev", action="store_true",
+                    help="the development slice ONLY -- the one set you may "
+                         "tune against. Never mixed into a normal run.")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--bounds-only", action="store_true",
                     help="no model calls; the deterministic baseline")
@@ -150,30 +164,61 @@ def main():
                     help="on gemini the key ring paces calls, so more workers "
                          "than the pool RPM just queue on the limiter")
     ap.add_argument("--effort", default="high")
-    ap.add_argument("--provider", default=os.getenv("PRAMAN_PROVIDER", "anthropic"),
+    ap.add_argument("--provider", default=os.getenv("PRAMAN_PROVIDER", "gemini"),
                     choices=["anthropic", "gemini"],
                     help="which model answers the semantic question")
     ap.add_argument("--model", default="",
                     help="override the provider's default model")
     ap.add_argument("--thinking-budget", type=int, default=512,
                     help="gemini only: reasoning tokens before the verdict")
-    ap.add_argument("--out", default="out/run.json")
+    ap.add_argument("--out", default="",
+                    help="default: out/run.json, or out/dev_run.json under --dev")
     ap.add_argument("--regrade")
     args = ap.parse_args()
+    if not args.out:
+        args.out = "out/dev_run.json" if args.dev else "out/run.json"
 
     if args.regrade:
         r = regrade(args.regrade)
         print(f"re-graded {args.regrade}  (meta: {r['meta']})")
+        stored = r["meta"].get("prompt_fingerprint")
+        current = prompt_fingerprint()
+        if stored and stored != current:
+            print(f"\n  !! this run was produced by a DIFFERENT system prompt "
+                  f"({stored}, now {current}).\n     Re-grading recomputes the "
+                  f"metrics from stored verdicts, so the numbers below are "
+                  f"still\n     what that run measured -- but they are not what "
+                  f"today's code would produce.\n")
+        elif not stored:
+            print(f"\n  note: this run predates prompt fingerprinting, so which "
+                  f"prompt produced it\n        cannot be checked from the file. "
+                  f"Current prompt is {current}.\n")
         results, _ = __import__("praman.eval.harness", fromlist=["load_run"]) \
             .load_run(args.regrade)
-        print_report(r["report"], results)
+        print_report(r["report"], results, dev=bool(args.dev))
         return
 
-    cases = []
-    if not args.generated:
-        cases += load(ROOT / "datasets" / "heldout.jsonl")
-    if not args.heldout:
-        cases += load(ROOT / "datasets" / "generated.jsonl")
+    if args.dev:
+        # Built in memory rather than read from datasets/dev.jsonl, so a label
+        # recorded a minute ago is the label measured against. A materialised
+        # file would need rebuilding after every labelling session, and the one
+        # time someone forgot, the run would silently grade against the model's
+        # own proposals and report the agreement as accuracy.
+        from praman.data.devset import DEV_CASES, HUMAN_LABELLED
+        cases = list(DEV_CASES)
+        print(f"development slice: {len(cases)} cases, "
+              f"{HUMAN_LABELLED} carrying a human label")
+        if HUMAN_LABELLED < len(cases):
+            print(f"\n  !! {len(cases) - HUMAN_LABELLED} case(s) still carry the "
+                  f"label a model proposed.\n     Accuracy against those is a "
+                  f"model agreeing with itself. Run:\n"
+                  f"         python tools/label_dev.py\n")
+    else:
+        cases = []
+        if not args.generated:
+            cases += load(ROOT / "datasets" / "heldout.jsonl")
+        if not args.heldout:
+            cases += load(ROOT / "datasets" / "generated.jsonl")
     if args.limit:
         cases = cases[:args.limit]
 
@@ -230,7 +275,7 @@ def main():
               "effort": args.effort})
     if getattr(args, "_ring", None) is not None:
         print("\n" + args._ring.report())
-    print_report(report(results), results)
+    print_report(report(results), results, dev=args.dev)
     print(f"\nfull run written to {args.out} — re-grade with "
           f"--regrade {args.out}")
 

@@ -34,6 +34,7 @@ system that guesses confidently on the cases where guessing is most expensive.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -95,9 +96,47 @@ purchase within it.
 amount or the nature of the purchase makes guessing wrong expensive. Defer to \
 the human.
 
-STEP_UP is a real answer, not a hedge. Use it when the case is genuinely \
-undecidable from the mandate. Do not use it to avoid a call you can actually \
-make: if the mandate settles the question, settle it.
+STEP_UP is a real answer, not a hedge, and there are two ways to get it wrong. \
+The obvious one is hedging: stepping up on a case the mandate plainly settles, \
+which makes the gate useless by sending everything to a human. The other is \
+harder to notice and more expensive: RESOLVING a case that is genuinely poised, \
+by supplying a judgment the person never delegated. Guard against both. If the \
+mandate settles the question, settle it. If it does not, say so -- do not settle \
+it on the person's behalf.
+
+WHAT BEING WRONG COSTS
+
+The three answers do not cost the same, and you are not the one who absorbs the \
+difference.
+
+  A wrong ALLOW   -- the purchase gets disputed. The merchant loses the \
+transaction and roughly 1,500 more in dispute handling, and the person finds \
+something bought in their name that they did not want.
+  A wrong BLOCK   -- a legitimate sale is lost and the person is inconvenienced.
+  A STEP_UP       -- the person is asked a question. Seconds of their attention, \
+and they keep a decision they never actually gave away.
+
+So on a case you cannot settle from the delegation, STEP_UP is not the timid \
+answer. It is the cheap one.
+
+HOW TO TELL WHETHER A CASE IS GENUINELY POISED
+
+Watch your own reasoning for a BRIDGE -- a step you have to take to get from the \
+delegation to the verdict, which the person did not write. Bridges look like:
+
+  - treating the registered category as a labelling artefact, so the item can be \
+read into scope
+  - settling a qualifier the person left open: whether something counts as \
+"basic", "fancy", "premium", "usual", "small", "what we need"
+  - extending a place to a kind of thing, or a kind of thing to a place -- \
+"anything from the chemist" reaching something not sold as medicine
+  - choosing which of the person's two sentences governs, when they point \
+different ways
+
+A bridge is not automatically wrong; some are plainly what the person meant. But \
+if you needed one, and a reasonable person could decline to cross it, the case is \
+poised. Hand the bridge to the human and name it in your reason, rather than \
+crossing it quietly and reporting the far side as a finding.
 
 HOW TO READ THE INPUT
 
@@ -132,11 +171,13 @@ mandate's list of allowed categories was COMPILED from what the person said -- \
 they said "groceries and household things", and that was mapped onto a fixed \
 taxonomy. So when a cart item's registered category is not on the allowed list, \
 that is a mismatch for you to weigh, not a rule the person wrote. Ask what they \
-meant. Batteries and light bulbs bought at a supermarket are registered \
-"electronics" and are plainly household restocking. A delivery fee on a grocery \
-order is registered "services" and is plainly part of the grocery order. A \
-bouquet of flowers is registered "gifting" and is plainly not groceries. Decide \
-on the person's intent.
+meant. A delivery fee on a grocery order is registered "services" and is plainly \
+part of the grocery order. A bouquet of flowers is registered "gifting" and is \
+plainly not groceries. Those are the easy ends. Many mismatches are neither -- \
+the register is a poor fit for the thing AND the person's words do not clearly \
+reach it -- and a mismatch is not a licence to read the item into scope. Decide \
+on the person's intent; where their intent is not visible in what they said, \
+that is a poised case, not a puzzle to solve.
 
 The DENIED category list is the opposite and you will never see it here: a \
 denied category is something the person refused in their own words, it is \
@@ -161,6 +202,19 @@ certainly did not intend them.
 Cite the clause you relied on. A decision that cannot name what it enforced is \
 not defensible, and every one of these decisions may be read back in a dispute.\
 """
+
+
+def prompt_fingerprint() -> str:
+    """Short content hash of the system prompt, recorded in every run's meta.
+
+    A metric is only reproducible if you know what produced it, and the prompt
+    is the largest thing that can change under a stored number without leaving
+    a trace. Editing a single sentence in SYSTEM_PROMPT silently invalidates
+    every committed run, and nothing in the file would say so. This makes the
+    mismatch visible: a run whose fingerprint differs from the current code was
+    measured against a different adjudicator, whatever its filename claims.
+    """
+    return hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:12]
 
 
 @dataclass

@@ -80,7 +80,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true",
                     help="deterministic adjudicator; no network at all")
-    ap.add_argument("--provider", default=os.getenv("PRAMAN_PROVIDER", "anthropic"),
+    ap.add_argument("--provider", default=os.getenv("PRAMAN_PROVIDER", "gemini"),
                     choices=["anthropic", "gemini"])
     args = ap.parse_args()
 
