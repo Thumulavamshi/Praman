@@ -63,9 +63,24 @@ class Payment:
     error_description: str = ""
     notes: dict = field(default_factory=dict)
 
+    # How much of this payment has already gone back, in paise. Razorpay
+    # returns both of these on every payment object and we were dropping them,
+    # which left callers with no way to ask the only question that matters
+    # before refunding: how much is still refundable? Without it an
+    # already-refunded payment is indistinguishable from a malformed request --
+    # both come back as a bare 400 -- and that is a diagnosis the caller has to
+    # guess at rather than read.
+    amount_refunded: int = 0
+    refund_status: str = ""  # "" (none) | partial | full
+
     @property
     def rupees(self) -> Decimal:
         return to_rupees(self.amount)
+
+    @property
+    def refundable(self) -> int:
+        """Paise still refundable. Never negative."""
+        return max(0, self.amount - self.amount_refunded)
 
 
 @dataclass

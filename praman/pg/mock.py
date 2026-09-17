@@ -18,7 +18,7 @@ Deterministic under a seed, so the demo runs identically every time.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from praman.ledger.money import money, money_str
 from .interface import Order, Payment, Refund, to_paise, to_rupees
@@ -90,7 +90,7 @@ class MockRazorpay:
             raise GatewayError("BAD_REQUEST_ERROR",
                                "this payment failed and cannot be captured")
         amount = to_paise(amount_rupees)
-        if p.status == "captured":
+        if p.status in ("captured", "refunded"):
             # CORRECTED against the live API, 2026-09-03. This mock previously
             # returned the payment, on the assumption that Razorpay treats
             # re-capture idempotently. It does not -- it answers
@@ -115,17 +115,37 @@ class MockRazorpay:
         self.orders[p.order_id].status = "paid"
         return p
 
-    def fetch_payment(self, payment_id: str) -> Payment:
+    def _live(self, payment_id: str) -> Payment:
+        """The stored payment itself. Internal -- mutations belong in here."""
         p = self.payments.get(payment_id)
         if p is None:
             raise GatewayError("BAD_REQUEST_ERROR", f"no such payment {payment_id}")
         return p
 
+    def fetch_payment(self, payment_id: str) -> Payment:
+        """A snapshot, not the stored object.
+
+        CORRECTED 2026-09-17. This used to return the stored payment itself, so
+        a caller holding the result watched it change under them whenever
+        anything else touched the payment. The live client cannot do that: it
+        builds a fresh Payment out of each API response, and a value read from
+        one is fixed until you fetch again.
+
+        The divergence is invisible until it is expensive. Read a refundable
+        balance, refund against it, then check the balance you read -- against
+        the live gateway you are holding the number you read, against this mock
+        you were silently holding the number as it is NOW. The live check's own
+        over-refund test was reading a balance of zero for exactly this reason
+        and concluding the gateway had accepted an over-refund.
+        """
+        p = self._live(payment_id)
+        return replace(p, notes=dict(p.notes))
+
     # -- refunds -------------------------------------------------------------
 
     def refund(self, payment_id: str, amount_rupees,
                notes: dict | None = None) -> Refund:
-        p = self.fetch_payment(payment_id)
+        p = self._live(payment_id)
         if p.status not in ("captured", "refunded"):
             raise GatewayError("BAD_REQUEST_ERROR",
                                "only a captured payment can be refunded")
@@ -140,6 +160,12 @@ class MockRazorpay:
         r = Refund(id=self._id("rfnd"), payment_id=payment_id, amount=amount,
                    status="processed", notes=notes or {})
         self.refunds[r.id] = r
+        # Keep the payment's own refund counters in step, because the live API
+        # does. A caller that asks "how much is left?" must get the same answer
+        # from both implementations or the seam is a lie in the one direction
+        # that matters -- the direction where money has already moved.
+        p.amount_refunded = already + amount
+        p.refund_status = "full" if p.amount_refunded == p.amount else "partial"
         if already + amount == p.amount:
             p.status = "refunded"
         return r

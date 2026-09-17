@@ -236,12 +236,21 @@ def main():
 
     # ---------------------------------------------------------------- BEAT 7
     beat("A CHARGEBACK DEFENDED — every number quoted from a record")
-    praman.raise_chargeback(good_payment, "agent_not_authorized")
-    cb = next(iter(engine.state.chargebacks.values()))
-    print(f"\n  The cardholder says: \"I didn't authorize that, my agent did.\"")
-    print(f"  reason code {cb.reason_code}, INR {money_str(cb.amount)}\n")
-    bundle = praman.defend(good_payment, cb.chargeback_id)
-    print(bundle.render())
+    if not good_payment:
+        # Beat 2 never captured, so there is nothing to dispute. The usual
+        # cause is an adjudicator that could not be reached: the gate fails
+        # closed to STEP_UP, which is the safety property working, not a
+        # breakage -- but the beat below needs a captured payment and would
+        # otherwise die on an unhandled StopIteration, which reads like the
+        # system fell over rather than like it refused to guess.
+        print("\n  Skipped: beat 2 captured nothing, so there is no payment to")
+        print("  dispute. Scroll up for its verdict — if it reads STEP_UP with")
+        print("  'adjudicator unavailable', the gate refused to guess without")
+        print("  the model, which is the intended failure direction.")
+        print("\n  Run the whole thing with no network and no keys instead:")
+        print("      python tools/demo.py --offline")
+    else:
+        defend_chargeback(praman, engine, good_payment)
 
     rule("integrity of the whole run")
     chain_ok, violations, bad = engine.verify()
@@ -252,6 +261,16 @@ def main():
           f"{dec_ok}")
     print(f"  invariants       {len(violations)} violations")
     print()
+
+
+def defend_chargeback(praman, engine, good_payment):
+    """Beat 7 proper: raise a dispute on a real capture and defend it."""
+    praman.raise_chargeback(good_payment, "agent_not_authorized")
+    cb = next(iter(engine.state.chargebacks.values()))
+    print(f"\n  The cardholder says: \"I didn't authorize that, my agent did.\"")
+    print(f"  reason code {cb.reason_code}, INR {money_str(cb.amount)}\n")
+    bundle = praman.defend(good_payment, cb.chargeback_id)
+    print(bundle.render())
 
 
 if __name__ == "__main__":

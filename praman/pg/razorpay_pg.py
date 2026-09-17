@@ -34,6 +34,7 @@ class RazorpayGateway:
     key_secret: str = field(
         default_factory=lambda: os.getenv("RAZORPAY_KEY_SECRET", ""))
     _client: object = None
+    _last_response: object = None
 
     def __post_init__(self):
         if not self.key_id or not self.key_secret:
@@ -48,6 +49,39 @@ class RazorpayGateway:
                 "Praman books test data and must never touch live credentials")
         import razorpay
         self._client = razorpay.Client(auth=(self.key_id, self.key_secret))
+        # The SDK raises BadRequestError(description) and throws the rest of the
+        # error body away -- the offending field, the source, the step, the
+        # reason, the status code. That is how a rejected parameter reaches you
+        # as the bare string "invalid request sent", which is a symptom, not a
+        # diagnosis, and sends you bisecting request bodies by hand against a
+        # live payments API. Keep the raw response; it costs one hook and turns
+        # the next failure into something readable.
+        self._client.session.hooks["response"].append(self._remember)
+
+    def _remember(self, response, *args, **kwargs):
+        self._last_response = response
+        return response
+
+    def last_error(self) -> str:
+        """Everything the API said about the most recent failed call, or "".
+
+        Razorpay returns code, description, field, source, step and reason on a
+        400. Reporting all of them is the difference between "invalid request
+        sent" and "field=speed, step=payment_refund" -- the second one you can
+        act on without a second run.
+        """
+        r = self._last_response
+        if r is None or r.status_code < 400:
+            return ""
+        try:
+            err = (r.json() or {}).get("error") or {}
+        except ValueError:
+            return f"HTTP {r.status_code}: {r.text[:300]}"
+        parts = [f"HTTP {r.status_code}"]
+        parts += [f"{k}={err[k]}" for k in
+                  ("code", "description", "field", "source", "step", "reason")
+                  if err.get(k) and err[k] != "NA"]
+        return "  ".join(parts)
 
     def create_order(self, amount_rupees, receipt: str,
                      notes: dict | None = None) -> Order:
@@ -78,11 +112,38 @@ class RazorpayGateway:
         return self._payment(self._client.payment.fetch(payment_id))
 
     def refund(self, payment_id: str, amount_rupees,
-               notes: dict | None = None) -> Refund:
-        d = self._client.payment.refund(payment_id, {
-            "amount": to_paise(amount_rupees), "notes": notes or {},
-            "speed": "normal",
-        })
+               notes: dict | None = None, speed: str | None = None) -> Refund:
+        """Refund, sending only the fields the call actually needs.
+
+        Changed 2026-09-17, after a live run answered
+
+            BAD_REQUEST_ERROR: invalid request sent
+
+        on an otherwise ordinary partial refund of a captured card payment.
+        That description names no field, which is what makes it expensive: it
+        is the generic 400, and one documented cause of it is an unrequested
+        parameter in the body.
+
+        This used to send ``speed="normal"`` on every refund. That was the only
+        optional field we sent unconditionally, and "normal" is the API's own
+        default -- so at best it changed nothing, and at worst it was the
+        rejected key. ``speed`` is the parameter that selects an instant
+        refund, which is a feature an account either has or does not, so it is
+        the field most likely to be refused on an account that does not.
+
+        What is actually proven, stated honestly: removing it cannot change the
+        outcome of a call that would have succeeded, and it removes one
+        candidate cause of one that would not. It is NOT proof that this was
+        the cause -- that needs a live run, and this could equally have been a
+        payment with no refundable balance left. ``last_error()`` above now
+        reports the field, step and reason the API itself named, so the next
+        live run answers the question instead of narrowing it. ``speed`` stays
+        available, opt-in, for the day someone wants an instant refund.
+        """
+        body = {"amount": to_paise(amount_rupees), "notes": notes or {}}
+        if speed:
+            body["speed"] = speed
+        d = self._client.payment.refund(payment_id, body)
         return Refund(id=d["id"], payment_id=d["payment_id"], amount=d["amount"],
                       status=d["status"], notes=d.get("notes") or {})
 
@@ -94,7 +155,9 @@ class RazorpayGateway:
             method=d.get("method", ""), captured=bool(d.get("captured")),
             error_code=d.get("error_code") or "",
             error_description=d.get("error_description") or "",
-            notes=d.get("notes") or {})
+            notes=d.get("notes") or {},
+            amount_refunded=int(d.get("amount_refunded") or 0),
+            refund_status=d.get("refund_status") or "")
 
 
 def get_gateway(kind: str | None = None):

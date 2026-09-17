@@ -263,6 +263,7 @@ def main():
         if p.status == "authorized":
             cap = gw.capture_payment(p.id, to_rupees(p.amount))
             ok(f"captured -> status={cap.status}")
+            p = gw.fetch_payment(p.id)
         else:
             cap = p
             ok(f"already {p.status}; skipping capture")
@@ -281,18 +282,57 @@ def main():
             else:
                 bad(f"re-capture failed for an unexpected reason: {e}")
 
-        half = to_rupees(p.amount // 2)
-        r = gw.refund(p.id, half, notes={"reason": "praman_check"})
+        # Refund against what is still refundable, not against the payment
+        # amount. Re-running this script on the same payment id is the normal
+        # case rather than the exception -- the id gets pasted back in more
+        # than once -- and "half the payment amount" stops being refundable the
+        # moment a previous run refunded anything. Asking for more than the
+        # balance returns a 400 that looks exactly like a malformed request,
+        # which sends you debugging the request body instead of reading the
+        # payment.
+        if p.amount_refunded:
+            ok(f"{p.amount_refunded} paise already refunded "
+               f"(refund_status={p.refund_status or 'none'}); "
+               f"{p.refundable} paise still refundable")
+        if p.refundable < 100:
+            bad(f"only {p.refundable} paise left to refund on {p.id}, below the "
+                "INR 1.00 minimum — the refund checks cannot run against this "
+                "payment.\n         Make a fresh one (--link or --checkout) "
+                "and pass that id instead.")
+            return 1
+
+        # Hold the balance we read. Re-reading p.refundable after the refund
+        # below would be reading a different number, and against a gateway that
+        # hands back a live object rather than a snapshot it would be reading
+        # zero -- which makes the over-refund probe below ask for 100 paise
+        # against a balance that still has thousands in it, and report that the
+        # gateway accepted an over-refund when it did nothing of the kind.
+        refundable = p.refundable
+        half_paise = min(refundable, max(100, refundable // 2))
+        r = gw.refund(p.id, to_rupees(half_paise), notes={"reason": "praman_check"})
         ok(f"refund {r.id}  {r.amount} paise  status={r.status}")
 
+        # One rupee past the remaining balance, not some wildly large number.
+        # The mock refuses at exactly the balance, so that is the boundary
+        # worth proving the live gateway refuses at too -- a check that only
+        # rejects an absurd amount would pass against a gateway that draws the
+        # limit somewhere else entirely.
+        remaining = refundable - half_paise
         try:
-            gw.refund(p.id, to_rupees(p.amount))
+            gw.refund(p.id, to_rupees(remaining + 100))
             bad("an over-refund was ACCEPTED — the gateway is not enforcing the "
                 "refundable balance, and neither would our mock")
         except Exception:                               # noqa: BLE001
-            ok("over-refund correctly refused")
+            ok(f"over-refund refused at the boundary ({remaining + 100} paise "
+               f"against a {remaining} paise balance)")
     except Exception as e:                              # noqa: BLE001
         bad(f"{e.__class__.__name__}: {e}")
+        detail = getattr(gw, "last_error", lambda: "")()
+        if detail:
+            print(f"\n         {detail}\n")
+            print("         ^ the whole error body. The SDK raises only the")
+            print("           description, which is how a rejected parameter")
+            print("           reaches you as the bare 'invalid request sent'.")
         return 1
 
     print(f"\n{'=' * W}\nAll live checks passed. The mock's behaviour matches the "
