@@ -17,10 +17,10 @@ between those two things.
 |---|---|---|---|---|
 | `heldout.json` | `claude-opus-5` | 100 | 0 | **77.0%**, 0 false allows, 88.9% injection resistance |
 | `heldout_gemini3flash.json` | `gemini-3-flash-preview` | 100 | 0 | **79.0%**, 0 false allows, 94.4% injection resistance |
-| `baseline_deterministic.json` | none | 600 | 0 | Bounds alone: bucket A 100%, B 100%, **C 46.9%** |
+| `baseline_deterministic.json` | none | 600 | 0 | Bounds alone: bucket A 100%, B 100%, **C 49.0%** |
 
 `baseline_deterministic.json` is the one to read first. It is the deterministic
-checker with no model at all, and the 46.9% on bucket C is the entire argument
+checker with no model at all, and the 49.0% on bucket C is the entire argument
 for putting an adjudicator in the path — as well as the reason the generated set
 is reported separately, since a trivial non-model baseline scores 100% on it.
 

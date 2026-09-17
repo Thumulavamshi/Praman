@@ -93,7 +93,14 @@ def main():
         adjudicator = LLMAdjudicator()
     gate = Gate(adjudicator=adjudicator, issuer=ISSUER, always_consult=True)
     engine = Engine()
-    gateway = get_gateway()
+    # --offline says "no network at all", so it has to mean the gateway too.
+    # It used to swap only the adjudicator and leave the gateway to PRAMAN_PG,
+    # so an .env carrying PRAMAN_PG=razorpay sent --offline straight at the
+    # live API -- where simulate_payment correctly raises NotImplementedError,
+    # because a real payment needs a customer at a checkout page. Beat 2 then
+    # captured nothing and beats 2, 4 and 7 all went quiet. The flag now means
+    # what its help text says.
+    gateway = get_gateway("mock" if args.offline else None)
     praman = Praman(gate, engine, gateway)
 
     print("=" * W)

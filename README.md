@@ -530,10 +530,32 @@ textbook `Decimal` discipline, every docstring rewritten for this domain.
 
 ## What is not built
 
-Below the plan's cut line, and honestly absent rather than half-present:
+Honestly absent rather than half-present. All three phases below the plan's cut
+line — dispute defender, reconciler, polish — did get built; these are what did
+not.
 
-- **Dispute defender as an agentic loop.** The evidence bundle it would work
-  from is built and tested (`praman/evidence/chain.py`), and the demo files a
-  representment packet. What is missing is the tool-runner loop that
-  investigates autonomously.
+- **The buyer agent does not speak MCP.** The plan put a Claude agent on the far
+  side of the gate, proposing carts over Razorpay's MCP server. What exists
+  instead is `build_proposal()` in `tools/demo.py`: carts assembled in Python and
+  handed to the same `Praman.purchase()` entry point an agent would call. The
+  gate, the ledger and the evidence chain cannot tell the difference — the
+  proposal is the interface — so what is missing is the transport and a real
+  model choosing the cart, not the thing being defended. `.env.example` still
+  carries the `RAZORPAY_BASE64_TOKEN` and `AUTH_HEADER` slots it would need.
+  This is the largest single gap against the plan.
+
+- **Step-up is a path, not a flow.** `Praman.approve_step_up()` is implemented
+  and tested, `POST /step-up/approve` exposes it, and the step-up rate is
+  reported per bucket. There is no human-facing confirmation screen — the plan
+  listed this as an open question and it stayed open. The demo shows STEP_UP
+  verdicts being reached and never shows one being resolved.
+
+- **STEP_UP recall is the weakest measured number, and the adjudicator does not
+  currently earn its place on it.** 23 held-out cases have "ask the human" as
+  the authored answer. `claude-opus-5` catches 3 of them — 13.0% recall, which
+  is *exactly* what the deterministic checker scores with no model at all
+  (`gemini-3-flash` catches 5, 21.7%). On ALLOW/BLOCK the model clearly adds
+  value; on the axis of knowing when to defer, it currently adds none. That is
+  reported rather than tuned away, it is the first thing an examiner should
+  press on, and it is the single most valuable thing left to work on.
 
