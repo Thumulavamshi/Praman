@@ -550,6 +550,73 @@ textbook `Decimal` discipline, every docstring rewritten for this domain.
 
 ---
 
+## The buyer agent, over MCP
+
+Everything else here builds proposals in Python. That proves the gate works; it
+does not prove the gate works when the thing on the other side is a real model
+with its own intentions, reading seller-written copy and deciding what to put in
+a cart. `praman/mcp/server.py` is that other side.
+
+**There is no tool that moves money.** The agent can read its mandate, search the
+catalog, and *propose*. Whether money moves is decided by the gate, inside
+`propose_purchase`, after the agent has said what it wants and before anything is
+captured. No capture tool, no override parameter, no second path — and
+`tests/test_mcp.py` asserts over the tool surface so that adding one fails the
+build. The agent is the least trustworthy component in the system: it reads text
+written by sellers who are paid when it buys, and its reasoning is not auditable
+afterwards. So it is given no authority to protect.
+
+| Tool | |
+|---|---|
+| `get_mandate` | the delegation in the person's words, plus the compiled bounds |
+| `search_catalog` | products, with seller copy labelled as the seller's |
+| `propose_purchase` | goes to the gate; returns a verdict and a cited clause |
+| `get_decision` | reads a decision back out of the hash chain |
+
+The agent's own stated reason travels with the proposal into the
+`agent_purchase_proposed` event, so it is hash-chained and reads back in a
+dispute. That reasoning is the part of the trail that today lives only in a
+third-party platform's logs, which is the gap in the problem statement at the top
+of this file.
+
+### Running it
+
+```bash
+pip install -r requirements.txt
+python -m praman.mcp.server --selftest      # no keys, no network
+```
+
+Add it to Claude Code:
+
+```bash
+claude mcp add praman \
+  --env PRAMAN_PROVIDER=gemini --env PRAMAN_PG=mock \
+  -- python -m praman.mcp.server
+```
+
+Or to Claude Desktop, in `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "praman": {
+      "command": "<path to your venv python>",
+      "args": ["-m", "praman.mcp.server"],
+      "cwd": "<path to this repo>",
+      "env": { "PRAMAN_PROVIDER": "gemini", "PRAMAN_PG": "mock" }
+    }
+  }
+}
+```
+
+`PRAMAN_MCP_MANDATE` picks which delegation the agent is acting under — any key
+from `praman/data/mandates.py`, default `reference`. `PRAMAN_PROVIDER=offline`
+runs the whole thing on the deterministic double with no keys at all, and
+`get_mandate` says so in its reply rather than letting a static verdict be
+mistaken for a model's.
+
+Then ask the agent to buy something. Ask it to buy whisky.
+
 ## Step-up recall, and the development slice
 
 The weakest measured number in this project is STEP_UP recall: of 23 held-out
@@ -604,15 +671,12 @@ Honestly absent rather than half-present. All three phases below the plan's cut
 line — dispute defender, reconciler, polish — did get built; these are what did
 not.
 
-- **The buyer agent does not speak MCP.** The plan put a Claude agent on the far
-  side of the gate, proposing carts over Razorpay's MCP server. What exists
-  instead is `build_proposal()` in `tools/demo.py`: carts assembled in Python and
-  handed to the same `Praman.purchase()` entry point an agent would call. The
-  gate, the ledger and the evidence chain cannot tell the difference — the
-  proposal is the interface — so what is missing is the transport and a real
-  model choosing the cart, not the thing being defended. `.env.example` still
-  carries the `RAZORPAY_BASE64_TOKEN` and `AUTH_HEADER` slots it would need.
-  This is the largest single gap against the plan.
+- **Praman does not call Razorpay's own MCP server.** It *is* an MCP server (see
+  below), so a real agent proposes carts through the gate. What it does not do is
+  go out through Razorpay's hosted MCP server for the capture leg — it uses the
+  REST client in `praman/pg/razorpay_pg.py`, which is proven against the live
+  test-mode API. `.env.example` still carries the unused `RAZORPAY_BASE64_TOKEN`
+  and `AUTH_HEADER` slots that route would need.
 
 - **Step-up is a path, not a flow.** `Praman.approve_step_up()` is implemented
   and tested, `POST /step-up/approve` exposes it, and the step-up rate is

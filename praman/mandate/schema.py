@@ -258,6 +258,13 @@ class Proposal(BaseModel):
     merchant_familiarity: Literal["established", "occasional", "new", "unknown"] = "unknown"
     merchant_onboarded: str = ""
     proposed_at: str
+    # The agent's own account of why this is within the mandate. Optional, and
+    # empty for every proposal built in Python -- it exists for the MCP path,
+    # where a real model is on the other side and its stated reasoning is the
+    # one part of the decision trail that lives nowhere else. The whole
+    # proposal is model_dump()'d into the agent_purchase_proposed event, so
+    # anything recorded here is hash-chained and reads back in a dispute.
+    agent_reason: str = ""
     instrument: str = "card"
     # amount is authoritative and comes from the payment object, never from
     # product text. See handlers.h_fee_debited for why that matters.
