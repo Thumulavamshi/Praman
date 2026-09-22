@@ -72,6 +72,28 @@ on the person's behalf is the failure this system exists to prevent.
 
 MANDATE_VARIANT = os.getenv("PRAMAN_MCP_MANDATE", "reference")
 
+
+def _proposed_at() -> str:
+    """When the purchase is being proposed.
+
+    Real time by default, because a real purchase happens now and the mandate's
+    time window is a bound the person actually wrote -- "not in the middle of
+    the night" is a rule, not a formality.
+
+    ``PRAMAN_MCP_AT`` overrides it, and the override is deliberately an
+    environment variable rather than a tool parameter. The OPERATOR who starts
+    the server may pin the clock; the AGENT talking to it may not. If the agent
+    could supply its own timestamp it could walk a 3am purchase into the allowed
+    window by asserting a different hour, which turns a bound into a suggestion.
+    The whole design keeps facts the agent cannot forge on this side of the
+    boundary, and the clock is one of them.
+
+    Worth knowing before a demo: under the reference mandate, everything blocks
+    between 23:00 and 06:00 IST. That is the gate working, not a fault -- but
+    pin this if you are rehearsing at midnight.
+    """
+    return os.getenv("PRAMAN_MCP_AT") or datetime.now().astimezone().isoformat()
+
 server = MCPServer(name="praman", instructions=INSTRUCTIONS)
 
 _state: dict = {}
@@ -241,7 +263,7 @@ def propose_purchase(skus: list[str], reason: str = "",
         merchant_name=mrec["name"],
         merchant_familiarity=mrec["familiarity"],
         merchant_onboarded=mrec.get("onboarded", ""),
-        proposed_at=datetime.now().astimezone().isoformat(),
+        proposed_at=_proposed_at(),
         instrument="card", amount=f"{total:.2f}", agent_reason=reason)
 
     out = p.purchase(proposal)
@@ -282,6 +304,11 @@ def selftest() -> int:
     """Drive the tools in process, without an MCP client. No network needed."""
     os.environ["PRAMAN_PROVIDER"] = "offline"   # no network, no keys, no quota
     os.environ.setdefault("PRAMAN_PG", "mock")
+    # Pin the clock. A smoke check of the plumbing must not depend on the hour
+    # it is run: the reference mandate blocks between 23:00 and 06:00 IST, so an
+    # unpinned selftest passes all afternoon and fails at midnight, which reads
+    # like the server broke rather than like the gate did its job.
+    os.environ.setdefault("PRAMAN_MCP_AT", "2026-09-03T19:20:00+05:30")
     print("get_mandate():")
     m = get_mandate()
     print(f"  said        {m['the_person_said'][:70]}...")

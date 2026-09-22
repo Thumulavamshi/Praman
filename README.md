@@ -615,6 +615,15 @@ runs the whole thing on the deterministic double with no keys at all, and
 `get_mandate` says so in its reply rather than letting a static verdict be
 mistaken for a model's.
 
+**Rehearsing at night?** The reference mandate says *"not in the middle of the
+night"*, so between 23:00 and 06:00 IST every purchase is refused on
+`time_window`. That is the gate working. `PRAMAN_MCP_AT` pins the clock for a
+demo — and it is an environment variable rather than a tool parameter on
+purpose: the operator starting the server may set the clock, the agent talking
+to it may not. An agent that could supply its own timestamp could walk a 3am
+purchase into the allowed window by asserting a different hour, and the bound
+would stop being a bound.
+
 Then ask the agent to buy something. Ask it to buy whisky.
 
 ## Step-up recall, and the development slice

@@ -19,6 +19,11 @@ def srv(monkeypatch):
     """A fresh server with the deterministic double. No keys, no network."""
     monkeypatch.setenv("PRAMAN_PROVIDER", "offline")
     monkeypatch.setenv("PRAMAN_PG", "mock")
+    # A Thursday evening, inside the reference mandate's window. Without this
+    # the suite passes by day and fails between 23:00 and 06:00 IST, because
+    # the gate correctly refuses a middle-of-the-night purchase -- cases.py
+    # says it plainly: a case that depends on the wall clock fails at 3am.
+    monkeypatch.setenv("PRAMAN_MCP_AT", "2026-09-03T19:20:00+05:30")
     from praman.mcp import server as s
     s._state.clear()
     yield s
@@ -105,3 +110,34 @@ def test_the_mandate_says_which_adjudicator_actually_decided(srv):
     assert m["adjudicator"] == "StaticAdjudicator"
     assert "NOT a model" in m["adjudicator_note"] or "offline" in m["adjudicator_note"]
     assert json.dumps(m)          # the tool's reply must be serialisable
+
+
+def test_the_same_cart_is_refused_in_the_middle_of_the_night(srv, monkeypatch):
+    """"Not in the middle of the night" is a bound the person actually wrote.
+
+    This is the case that caught the suite out: run unpinned at 01:45 IST and
+    the groceries cart above blocks, correctly. Worth an explicit test rather
+    than a pinned clock that hides it -- the time window is a real constraint
+    and a demo rehearsed at midnight will meet it.
+    """
+    monkeypatch.setenv("PRAMAN_MCP_AT", "2026-09-03T02:00:00+05:30")
+    srv._state.clear()
+    out = srv.propose_purchase(["GRO-0001", "GRO-0006"], reason="weekly staples")
+    assert out["verdict"] != "ALLOW"
+    assert out["payment_id"] is None
+
+
+def test_the_agent_cannot_supply_its_own_timestamp(srv):
+    """The clock is a fact the agent must not be able to forge.
+
+    If propose_purchase took a time, an agent could walk a 3am purchase into the
+    allowed window by asserting a different hour, and the time bound would stop
+    being a bound. The override is an environment variable the operator sets,
+    on the server's side of the boundary.
+    """
+    import asyncio
+    tools = {t.name: t for t in asyncio.run(srv.server.list_tools())}
+    params = tools["propose_purchase"].input_schema.get("properties", {})
+    for forgeable in ("at", "proposed_at", "timestamp", "time", "now"):
+        assert forgeable not in params, f"agent can supply {forgeable}"
+    assert set(params) == {"skus", "reason", "quantities", "merchant_id"}
