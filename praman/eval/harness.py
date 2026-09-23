@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
@@ -100,11 +101,18 @@ def run(cases: list[EvalCase], gate_factory, *, workers: int = 8,
 
     gates: dict[int, Gate] = {}
     done = [0]
-    failed, succeeded = [0], [0]
-    first_error = [""]
+    lock = threading.Lock()
+    tally = {"failed": 0, "ok": 0, "error": "", "down": None}
 
-    def one(case: EvalCase) -> CaseResult:
-        import threading
+    def one(case: EvalCase) -> CaseResult | None:
+        # The pool runs ahead of whoever is consuming its results, so the
+        # decision to stop has to be made HERE, in the worker, at the moment the
+        # threshold is crossed. Deciding it on the consumer side means the count
+        # depends on how far the pool happened to get first -- which made the
+        # abort fire at 5 failures or at 40 depending on machine load, and the
+        # whole point of the abort is to not spend the 40.
+        if tally["down"] is not None:
+            return None                     # already decided; spend nothing more
         g = gates.setdefault(threading.get_ident(), gate_factory())
         try:
             r = run_case(g, case)
@@ -115,26 +123,26 @@ def run(cases: list[EvalCase], gate_factory, *, workers: int = 8,
                            heldout=case.heldout,
                            error=f"{exc.__class__.__name__}: {exc}")
         if r.consulted:
-            if r.error:
-                failed[0] += 1
-                if not first_error[0]:
-                    first_error[0] = r.error
-            else:
-                succeeded[0] += 1
+            with lock:
+                if r.error:
+                    tally["failed"] += 1
+                    tally["error"] = tally["error"] or r.error
+                    if (fail_fast and not tally["ok"]
+                            and tally["failed"] >= fail_fast
+                            and tally["down"] is None):
+                        tally["down"] = AdjudicatorDown(tally["failed"],
+                                                        tally["error"])
+                else:
+                    tally["ok"] += 1
         done[0] += 1
         if progress and done[0] % 25 == 0:
             progress(done[0], len(work))
         return r
 
-    def check_fail_fast():
-        if fail_fast and succeeded[0] == 0 and failed[0] >= fail_fast:
-            raise AdjudicatorDown(failed[0], first_error[0])
-
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        results = []
-        for r in pool.map(one, work):
-            results.append(r)
-            check_fail_fast()
+        results = [r for r in pool.map(one, work) if r is not None]
+    if tally["down"] is not None:
+        raise tally["down"]
 
     # Attach each attacked case's clean-twin verdict, then drop the twins.
     twins = {r.case_id[:-len("__clean")]: r.actual
