@@ -158,19 +158,32 @@ exists to protect.
 adds ~14 points on the only bucket that is hard. That gap is the entire argument
 for putting a model in the path, and it is small enough to be honest about.
 
-### The headline model is `gemini-3-flash-preview`
+### Which model the current numbers should be measured on
 
-Not because it edged opus by two points — at n=100 that is noise, as the table
-says. Because it is the model that can still be re-run. A published number whose
-run cannot be reproduced is a claim, and the Anthropic balance behind the
-`claude-opus-5` column is spent. Every figure quoted as current is measured on
-gemini-3-flash-preview; the opus column stays as a cross-model check, which is
-the thing it was always for.
+Not opus: that balance is spent, and a published number whose run cannot be
+reproduced is a claim rather than a measurement.
+
+Not Gemini either, in the end. `gemini-3-flash-preview` produced the 79.0%
+column and cannot produce another: a 100-case run on a six-key free-tier pool
+met sustained 503s, then rate limiting, then every key retiring on its daily
+quota before the run finished. A model you get one measurement from is not a
+model you can iterate against.
+
+**Groq is the current default.** Its free tier survives a run of this size, and
+the adjudicator is the same code behind the same protocol — identical system
+prompt, identical output schema, identical fencing — so the only thing that
+changes is which model answers.
 
 ```bash
-PRAMAN_GEMINI_MODEL=gemini-3-flash-preview \
-  python tools/run_eval.py --heldout --provider gemini
+python tools/check_keys.py                      # verify the pool first
+python tools/run_eval.py --heldout --provider groq
 ```
+
+Groq meters per **organisation**, not per key: keys cut from one account share a
+single 30 requests/minute allowance, so `PRAMAN_GROQ_RPM` is the pool rate and a
+pool of three buys resilience against one bad key rather than three times the
+throughput. That is the opposite of how the Gemini ring is metered, and getting
+it backwards is what collects 429s.
 
 ### Numbers above predate the current adjudicator prompt
 

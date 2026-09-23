@@ -80,8 +80,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true",
                     help="deterministic adjudicator; no network at all")
-    ap.add_argument("--provider", default=os.getenv("PRAMAN_PROVIDER", "gemini"),
-                    choices=["anthropic", "gemini"])
+    ap.add_argument("--provider", default=os.getenv("PRAMAN_PROVIDER", "groq"),
+                    choices=["anthropic", "gemini", "groq"])
     args = ap.parse_args()
 
     if args.offline:
@@ -89,6 +89,9 @@ def main():
     elif args.provider == "gemini":
         from praman.gate.gemini import GeminiAdjudicator
         adjudicator = GeminiAdjudicator()
+    elif args.provider == "groq":
+        from praman.gate.groq import GroqAdjudicator
+        adjudicator = GroqAdjudicator()
     else:
         adjudicator = LLMAdjudicator()
     gate = Gate(adjudicator=adjudicator, issuer=ISSUER, always_consult=True)

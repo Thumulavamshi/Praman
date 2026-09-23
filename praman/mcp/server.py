@@ -122,13 +122,16 @@ def _adjudicator():
     """
     from praman.gate.adjudicator import StaticAdjudicator
 
-    provider = os.getenv("PRAMAN_PROVIDER", "gemini").lower()
+    provider = os.getenv("PRAMAN_PROVIDER", "groq").lower()
     if provider in ("offline", "static", "none"):
         _state["adjudicator_error"] = (
             "PRAMAN_PROVIDER=offline -- the deterministic double is answering "
             "the semantic question, so semantic verdicts are not a model's")
         return StaticAdjudicator()
     try:
+        if provider == "groq":
+            from praman.gate.groq import GroqAdjudicator
+            return GroqAdjudicator()
         if provider == "gemini":
             from praman.gate.gemini import GeminiAdjudicator
             return GeminiAdjudicator()

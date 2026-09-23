@@ -9,6 +9,7 @@ which are rejected, and which have already spent their day.
 Deliberately does NOT use the key ring's rotation: the point is to test every
 key individually, including ones the ring would have skipped.
 """
+import argparse
 import os
 import sys
 import time
@@ -27,7 +28,8 @@ _PRE = {k: os.getenv(k) for k in ("GEMINI_API_KEYS", "GEMINI_API_KEY")}
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
-from praman.keyring import load_keys_from_env, looks_like_daily_exhaustion
+from praman.keyring import (load_groq_keys_from_env, load_keys_from_env,
+                            looks_like_daily_exhaustion)
 
 MODEL = os.getenv("PRAMAN_GEMINI_MODEL", "gemini-2.5-flash")
 
@@ -107,7 +109,75 @@ def _sdk_version() -> str:
         return "an unknown google-genai version"
 
 
+def check_groq(uniq: list[str]) -> int:
+    """One tiny completion per Groq key. Same purpose, different vocabulary."""
+    from groq import APIError, Groq
+    from praman.gate.groq import DEFAULT_GROQ_MODEL
+
+    model = os.getenv("PRAMAN_GROQ_MODEL", DEFAULT_GROQ_MODEL)
+    print(f"checking {len(uniq)} key(s) against {model}\n")
+    live = 0
+    for i, key in enumerate(uniq, 1):
+        label = f"key{i} {mask(key)}"
+        try:
+            t = time.perf_counter()
+            r = Groq(api_key=key).chat.completions.create(
+                model=model, max_completion_tokens=8, temperature=0.0,
+                messages=[{"role": "user", "content": "Reply with: ok"}])
+            ms = (time.perf_counter() - t) * 1000
+            u = getattr(r, "usage", None)
+            tok = getattr(u, "total_tokens", 0) or 0
+            print(f"  {label:<28} LIVE     {ms:6.0f} ms   {tok:>4} tokens")
+            live += 1
+        except APIError as e:                           # noqa: PERF203
+            msg, code = str(e), getattr(e, "status_code", "?")
+            if code == 429 and looks_like_daily_exhaustion(msg):
+                print(f"  {label:<28} SPENT    daily quota already used up today")
+            elif code == 429:
+                print(f"  {label:<28} BUSY     rate limited right now — this key "
+                      f"is fine, just pace it")
+                live += 1
+            elif code in (401, 403):
+                print(f"  {label:<28} BAD      {msg[:66]}")
+            elif code == 404:
+                print(f"  {label:<28} BAD      no such model {model!r} for this "
+                      f"key")
+            else:
+                print(f"  {label:<28} ERROR    {code}: {msg[:56]}")
+        except Exception as e:                          # noqa: BLE001
+            print(f"  {label:<28} ERROR    {e.__class__.__name__}: {str(e)[:56]}")
+
+    print(f"\n{live}/{len(uniq)} keys usable")
+    if live > 1:
+        print("\n  Groq meters per ORGANISATION, not per key. Keys cut from one")
+        print("  account share a single allowance, so a pool of "
+              f"{live} is resilience")
+        print("  against a bad key rather than "
+              f"{live}x the throughput. Separate accounts do add up.")
+    return 0 if live else 1
+
+
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--provider", default=os.getenv("PRAMAN_PROVIDER", "groq"),
+                    choices=["gemini", "groq"])
+    args = ap.parse_args()
+
+    if args.provider == "groq":
+        keys = load_groq_keys_from_env()
+        print(f"{len(keys)} Groq key(s) from "
+              f"{'GROQ_API_KEYS' if os.getenv('GROQ_API_KEYS') else 'GROQ_API_KEY'}"
+              f"\n")
+        if not keys:
+            print('no Groq keys found. Set GROQ_API_KEYS in .env:\n'
+                  '  GROQ_API_KEYS="gsk_...one,gsk_...two"\n'
+                  'GROQ_API_KEY is read too and may hold a list.')
+            return 1
+        seen, uniq = set(), []
+        for k in keys:
+            (uniq.append(k), seen.add(k)) if k not in seen else None
+        return check_groq(uniq)
+
     # Before anything else, including the no-keys bail-out. An empty pool is
     # precisely when you need to be told which source was consulted.
     describe_source()

@@ -305,6 +305,32 @@ class GeminiKeyRing:
         return "\n".join(lines)
 
 
+def load_keys(*names: str) -> list[str]:
+    """Keys from the first of ``names`` that is set, comma separated.
+
+    One parser for every provider, because the ways a key list gets mangled --
+    a JSON array, stray quotes, a trailing comma -- have nothing to do with who
+    issues the key, and a second copy of this would be a second place for the
+    bracket bug to come back.
+    """
+    for name in names:
+        raw = os.getenv(name, "").strip()
+        if not raw:
+            continue
+        if raw.startswith("[") and raw.endswith("]"):
+            raw = raw[1:-1]
+        keys = [k.strip().strip('"').strip("'") for k in raw.split(",")]
+        keys = [k for k in keys if k]
+        if keys:
+            return keys
+    return []
+
+
+def load_groq_keys_from_env() -> list[str]:
+    """GROQ_API_KEYS, or GROQ_API_KEY, which people also fill with a list."""
+    return load_keys("GROQ_API_KEYS", "GROQ_API_KEY")
+
+
 def load_keys_from_env() -> list[str]:
     """Keys from GEMINI_API_KEYS, comma separated.
 
@@ -318,20 +344,41 @@ def load_keys_from_env() -> list[str]:
     not valid" against a one-character key -- sends you to the API console
     rather than to your .env.
     """
-    raw = os.getenv("GEMINI_API_KEYS", "").strip()
-    if raw.startswith("[") and raw.endswith("]"):
-        raw = raw[1:-1]
-    keys = [k.strip().strip('"').strip("'") for k in raw.split(",") if k.strip()]
-    keys = [k for k in keys if k]
-    if not keys:
-        single = os.getenv("GEMINI_API_KEY", "").strip()
-        if single:
-            keys = [single]
+    keys = load_keys("GEMINI_API_KEYS", "GEMINI_API_KEY")
     return keys
 
 
+def gemini_classify(exc) -> tuple[bool, bool, int | None]:
+    """(rate_limited, overloaded, code) for a google-genai error."""
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    message = str(exc)
+    return (code == 429 or "RESOURCE_EXHAUSTED" in message.upper(),
+            code in _TRANSIENT_SERVER_CODES,
+            code)
+
+
+def groq_classify(exc) -> tuple[bool, bool, int | None]:
+    """(rate_limited, overloaded, code) for a groq SDK error.
+
+    Groq's daily ceilings arrive as 429s whose text names the window, which
+    ``looks_like_daily_exhaustion`` already recognises -- its markers are about
+    English phrasing ("per day", "requests per day") rather than anything
+    Google-specific.
+
+    One thing worth knowing before trusting a pool here: Groq rate limits are
+    enforced per ORGANISATION, not per key. Three keys cut from one account
+    share one allowance, so rotation buys resilience against a single bad key
+    and nothing at all in throughput. Keys from separate accounts do multiply.
+    """
+    code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    if not isinstance(code, int):
+        code = None
+    return (code == 429, code in _TRANSIENT_SERVER_CODES, code)
+
+
 def call_with_rotation(ring: GeminiKeyRing, fn, *, max_attempts: int | None = None,
-                       max_transient: int = 10, on_retry=None):
+                       max_transient: int = 10, on_retry=None,
+                       api_error=None, classify=None):
     """Run ``fn(client)`` against the pool, rotating and backing off on 429.
 
     ``fn`` is called with a live client and must be idempotent -- a retry after a
@@ -341,7 +388,11 @@ def call_with_rotation(ring: GeminiKeyRing, fn, *, max_attempts: int | None = No
     Backoff is jittered because a pool of workers that all back off for exactly
     the same interval simply collides again one interval later.
     """
-    from google.genai import errors
+    if api_error is None:
+        from google.genai import errors
+        api_error = errors.APIError
+    if classify is None:
+        classify = gemini_classify
 
     attempts = max_attempts or max(6, len(ring) * 3)
     last: Exception | None = None
@@ -378,11 +429,9 @@ def call_with_rotation(ring: GeminiKeyRing, fn, *, max_attempts: int | None = No
                                 f"{delay:.1f}s")
             time.sleep(delay)
             continue
-        except errors.APIError as exc:
-            code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+        except api_error as exc:
             message = str(exc)
-            rate_limited = code == 429 or "RESOURCE_EXHAUSTED" in message.upper()
-            overloaded = code in _TRANSIENT_SERVER_CODES
+            rate_limited, overloaded, code = classify(exc)
 
             # Anything else -- a 400 schema error, a 403 bad key -- is a bug in
             # the request, not congestion. Rotating keys would just repeat it on

@@ -194,8 +194,8 @@ def main():
                     help="on gemini the key ring paces calls, so more workers "
                          "than the pool RPM just queue on the limiter")
     ap.add_argument("--effort", default="high")
-    ap.add_argument("--provider", default=os.getenv("PRAMAN_PROVIDER", "gemini"),
-                    choices=["anthropic", "gemini"],
+    ap.add_argument("--provider", default=os.getenv("PRAMAN_PROVIDER", "groq"),
+                    choices=["anthropic", "gemini", "groq"],
                     help="which model answers the semantic question")
     ap.add_argument("--model", default="",
                     help="override the provider's default model")
@@ -287,6 +287,25 @@ def main():
                 on_retry=note), issuer=issuer, always_consult=True)
         mode = (f"{model}, thinking_budget={args.thinking_budget}, "
                 f"{len(ring)} keys, always_consult")
+        args._ring = ring
+    elif args.provider == "groq":
+        from praman.gate.groq import DEFAULT_GROQ_MODEL, GroqAdjudicator, GroqKeyRing
+        model = args.model or DEFAULT_GROQ_MODEL
+        ring = GroqKeyRing(model=model)
+        print(ring.report())
+        seen_g = set()
+
+        def note_g(state, why):
+            line = f"  [{state.masked}] {why}"
+            if line not in seen_g:
+                seen_g.add(line)
+                print(line, flush=True)
+
+        def factory():
+            return Gate(adjudicator=GroqAdjudicator(
+                ring=ring, model=model, on_retry=note_g),
+                issuer=issuer, always_consult=True)
+        mode = f"{model}, {len(ring)} keys, always_consult"
         args._ring = ring
     else:
         model = args.model or "claude-opus-5"
