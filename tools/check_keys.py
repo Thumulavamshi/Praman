@@ -28,11 +28,21 @@ def mask(k: str) -> str:
     return f"{k[:6]}...{k[-4:]}" if len(k) > 12 else "(short)"
 
 
+def _sdk_version() -> str:
+    import importlib.metadata as md
+    try:
+        return f"google-genai {md.version('google-genai')}"
+    except Exception:                                   # noqa: BLE001
+        return "an unknown google-genai version"
+
+
 def main():
     keys = load_keys_from_env()
     if not keys:
         print("no keys found. Set GEMINI_API_KEYS in .env as a comma-separated "
-              "list:\n  GEMINI_API_KEYS=\"AIza...one,AIza...two\"")
+              "list:\n  GEMINI_API_KEYS=\"AQ.Ab...one,AQ.Ab...two\"\n"
+              "AI Studio issues Auth keys (AQ.Ab) now rather than Standard "
+              "keys (AIza).")
         return 1
 
     seen, uniq = set(), []
@@ -71,8 +81,23 @@ def main():
                 print(f"  {label:<28} BUSY     rate limited right now (RPM) — "
                       f"this key is fine, just pace it")
                 live += 1
-            elif code in (400, 403):
+            elif code in (400, 401, 403):
                 print(f"  {label:<28} BAD      {msg[:66]}")
+                # An Auth key rejected as invalid is almost never the key. AI
+                # Studio now issues AQ.Ab keys instead of AIza ones, and older
+                # releases of google-genai refuse them with exactly this error,
+                # which reads like a revoked credential and sends you to the
+                # console to mint another one that fails identically.
+                if key.startswith("AQ.") and (
+                        "API_KEY_INVALID" in msg.upper()
+                        or "ACCESS_TOKEN_TYPE_UNSUPPORTED" in msg.upper()
+                        or "API KEY NOT VALID" in msg.upper()):
+                    print(f"  {'':28}          ^ this is an Auth key (AQ.), "
+                          f"not a Standard key (AIza).")
+                    print(f"  {'':28}            Older google-genai rejects "
+                          f"these. You have {_sdk_version()}.")
+                    print(f"  {'':28}            Try:  pip install -U "
+                          f"google-genai")
             else:
                 print(f"  {label:<28} ERROR    {code}: {msg[:60]}")
         except Exception as e:                          # noqa: BLE001

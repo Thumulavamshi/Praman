@@ -199,7 +199,10 @@ class GeminiKeyRing:
             raise RuntimeError(
                 "no Gemini keys found. Set GEMINI_API_KEYS in .env as a "
                 "comma-separated list, e.g.\n"
-                '  GEMINI_API_KEYS="AIza...one,AIza...two,AIza...three"')
+                '  GEMINI_API_KEYS="AQ.Ab...one,AQ.Ab...two,AQ.Ab...three"\n'
+                'AI Studio issues Auth keys (AQ.Ab) now; older Standard keys '
+                '(AIza) still work\nbut are being retired, and each format '
+                'needs a google-genai new enough to send it.')
         # Deduplicate while preserving order. The same key pasted twice does not
         # double your quota, and silently letting it look like two keys would
         # make the pacing maths wrong in the dangerous direction.
