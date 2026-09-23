@@ -20,7 +20,7 @@ load_dotenv(ROOT / ".env")
 
 from praman.data.cases import EvalCase
 from praman.eval.harness import regrade, run, save_run
-from praman.eval.metrics import exception_list, report
+from praman.eval.metrics import degraded, exception_list, report
 from praman.gate.adjudicator import (LLMAdjudicator, StaticAdjudicator,
                                      prompt_fingerprint)
 from praman.gate.gate import Gate
@@ -72,8 +72,37 @@ def print_slice(s, indent="  "):
           f"p95 {ms(lat['model_consulted']['p95_ms'])} ms")
 
 
+def print_degraded_banner(d: dict, W: int = 78) -> None:
+    print("\n" + "=" * W)
+    print("!!  DEGRADED RUN — NOT A MEASUREMENT")
+    print("=" * W)
+    print(f"  {d['n_errored']} of {d['n_total']} cases never reached the "
+          f"adjudicator — {d['share_of_all'] * 100:.1f}% of all cases, "
+          f"{d['share_of_consulted'] * 100:.1f}% of the")
+    print(f"  {d['n_consulted']} that were sent to the model.")
+    print()
+    print("  Every one of those failed CLOSED to STEP_UP. That is the safety")
+    print("  property working, and it is also what disguises the outage: the")
+    print("  step-up rate is inflated, the easy buckets collapse to 0%, and")
+    print("  there are no false allows because the model answered nothing.")
+    print("  The accuracy below is arithmetic over verdicts that were never given.")
+    print()
+    print("  what failed:")
+    for msg, n in d["distinct"][:4]:
+        print(f"    {n:>4}x  {msg}")
+    print()
+    print("  Do not quote any figure from this run. Fix the cause, run it again,")
+    print("  and if you keep the file, keep it the way out/README.md keeps the")
+    print("  other degraded runs: as evidence of the fail-closed path, not as a")
+    print("  metric.")
+    print("=" * W)
+
+
 def print_report(rep, results=None, dev=False):
     W = 78
+    bad = degraded(results) if results else None
+    if bad:
+        print_degraded_banner(bad, W)
     print("\n" + "=" * W)
     print("PRAMAN — AUTHORIZATION GATE EVALUATION")
     print("=" * W)
@@ -196,7 +225,7 @@ def main():
         results, _ = __import__("praman.eval.harness", fromlist=["load_run"]) \
             .load_run(args.regrade)
         print_report(r["report"], results, dev=bool(args.dev))
-        return
+        return 2 if degraded(results) else 0
 
     if args.dev:
         # Built in memory rather than read from datasets/dev.jsonl, so a label
@@ -279,6 +308,17 @@ def main():
     print(f"\nfull run written to {args.out} — re-grade with "
           f"--regrade {args.out}")
 
+    # The report is long enough that the banner at the top has scrolled away by
+    # now, and the last thing on screen is what gets copied into a README.
+    bad = degraded(results)
+    if bad:
+        print_degraded_banner(bad)
+        return 2
+
 
 if __name__ == "__main__":
-    main()
+    # Exit 2 on a degraded run. A script or a CI step that re-runs the eval must
+    # be able to tell "the gate scored badly" from "the adjudicator was never
+    # reached", and a zero exit on the second one is how a meaningless number
+    # gets picked up and published by something that was not watching.
+    raise SystemExit(main())

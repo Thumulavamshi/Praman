@@ -304,3 +304,36 @@ def exception_list(results: list[CaseResult], limit: int = 40) -> list[dict]:
         "attack_class": r.attack_class, "cited_clause": r.cited_clause,
         "reason": r.reason,
     } for r in wrong[:limit]]
+
+
+def degraded(results) -> dict | None:
+    """Is this a measurement, or a study of an adjudicator that was not there?
+
+    out/README.md has said from the beginning that results[].error is what
+    separates the two and to check it before quoting anything -- and nothing in
+    this tool checked it. A run where half the adjudications failed printed a
+    tidy accuracy figure and no warning at all, because every failure fails
+    CLOSED to STEP_UP and a step-up is a legitimate verdict that the metrics
+    count like any other.
+
+    That is the worst possible shape for this bug. The safety property working
+    perfectly is exactly what disguises the outage: no false allows, no false
+    blocks, a beautifully conservative gate -- and an accuracy number that means
+    nothing. Quoting it would have been the single most damaging thing this
+    project could publish, because the whole claim is that its numbers are real.
+    """
+    errored = [r for r in results if r.error]
+    if not errored:
+        return None
+    consulted = [r for r in results if getattr(r, "consulted", False)]
+    counts: dict[str, int] = {}
+    for r in errored:
+        counts[r.error[:150]] = counts.get(r.error[:150], 0) + 1
+    return {
+        "n_errored": len(errored),
+        "n_total": len(results),
+        "n_consulted": len(consulted),
+        "share_of_all": len(errored) / max(1, len(results)),
+        "share_of_consulted": len(errored) / max(1, len(consulted)),
+        "distinct": sorted(counts.items(), key=lambda kv: -kv[1]),
+    }
