@@ -72,3 +72,62 @@ def test_the_committed_degraded_run_is_still_recognised_as_one():
     # into a list as long as the outage.
     assert len(d["distinct"]) == 1
     assert "credit balance is too low" in d["distinct"][0][0]
+
+
+def test_a_dead_adjudicator_aborts_the_run_instead_of_burning_the_quota():
+    """Two full held-out runs were spent discovering the same dead adjudicator.
+
+    Each took twenty minutes, spent a day's free-tier quota, and produced a
+    report that looked plausible -- because every failed adjudication becomes a
+    fail-closed STEP_UP and the metrics count it like any other verdict. Five
+    calls is enough to learn what the whole run would have said.
+    """
+    import pytest
+    from praman.data.heldout import HELDOUT_CASES
+    from praman.eval.harness import AdjudicatorDown, run
+    from praman.gate.adjudicator import AdjudicationResult
+    from praman.gate.gate import Gate
+    from praman.data.mandates import ISSUER
+
+    class DeadAdjudicator:
+        """Fails exactly the way a rejected request fails: every time, alike."""
+
+        def adjudicate(self, mandate, proposal, bounds):
+            return AdjudicationResult(
+                verdict="STEP_UP", reason="adjudicator unavailable (ClientError)",
+                cited_clause="(adjudicator error)", confidence="low",
+                listing_attempted_instruction=False,
+                error="ClientError: 400 INVALID_ARGUMENT")
+
+    cases = [c for c in HELDOUT_CASES if c.bucket == "C"][:40]
+    with pytest.raises(AdjudicatorDown) as caught:
+        run(cases, lambda: Gate(adjudicator=DeadAdjudicator(), issuer=ISSUER,
+                                always_consult=True),
+            workers=1, measure_clean_twins=False)
+    assert "ClientError: 400 INVALID_ARGUMENT" in str(caught.value)
+    assert caught.value.n == 5
+
+
+def test_fail_fast_can_be_switched_off_to_capture_a_degraded_run():
+    """out/generated_degraded_credit_exhausted.json only exists because a run
+    was allowed to finish while failing. That evidence is worth keeping, so the
+    abort has to be defeatable on purpose."""
+    from praman.data.heldout import HELDOUT_CASES
+    from praman.eval.harness import run
+    from praman.gate.adjudicator import AdjudicationResult
+    from praman.gate.gate import Gate
+    from praman.data.mandates import ISSUER
+
+    class DeadAdjudicator:
+        def adjudicate(self, mandate, proposal, bounds):
+            return AdjudicationResult(
+                verdict="STEP_UP", reason="down", cited_clause="",
+                confidence="low", listing_attempted_instruction=False,
+                error="ClientError: 400")
+
+    cases = [c for c in HELDOUT_CASES if c.bucket == "C"][:10]
+    results = run(cases, lambda: Gate(adjudicator=DeadAdjudicator(),
+                                      issuer=ISSUER, always_consult=True),
+                  workers=1, measure_clean_twins=False, fail_fast=0)
+    assert len(results) == 10
+    assert all(r.error for r in results if r.consulted)

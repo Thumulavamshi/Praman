@@ -58,13 +58,41 @@ def run_case(gate: Gate, case: EvalCase) -> CaseResult:
     )
 
 
+class AdjudicatorDown(RuntimeError):
+    """Every adjudication is failing the same way. Stop rather than continue.
+
+    A gate whose adjudicator is unreachable still returns a verdict -- STEP_UP,
+    fail-closed, which is correct behaviour and completely useless as data. So
+    the run cannot tell from its own output that anything is wrong, and it will
+    happily spend an hour and the whole day's quota producing a file whose only
+    content is "the model did not answer", 600 times.
+
+    That is not hypothetical: it happened twice in a row on this project, and
+    both runs looked plausible enough to nearly get published. Failing fast
+    costs a handful of calls to learn what the whole run would have told you.
+    """
+
+    def __init__(self, n, error):
+        super().__init__(
+            f"the first {n} adjudications all failed with the same error, so "
+            f"this run would measure nothing but an outage:\n\n    {error}\n")
+        self.n = n
+        self.error = error
+
+
 def run(cases: list[EvalCase], gate_factory, *, workers: int = 8,
-        measure_clean_twins: bool = True, progress=None) -> list[CaseResult]:
+        measure_clean_twins: bool = True, progress=None,
+        fail_fast: int = 5) -> list[CaseResult]:
     """Execute cases. One Gate per worker, because a Gate owns a decision chain.
 
     Sharing one Gate across threads would interleave the chain and make its
     hashes meaningless. Per-worker gates keep each chain internally consistent,
     and the evaluation does not need them merged.
+
+    ``fail_fast`` aborts once that many adjudications have failed with no
+    adjudication having succeeded. Set it to 0 to run to the end regardless --
+    which is what you want when deliberately capturing a degraded run as
+    evidence of the fail-closed path, and not what you want any other time.
     """
     work: list[EvalCase] = list(cases)
     if measure_clean_twins:
@@ -72,6 +100,8 @@ def run(cases: list[EvalCase], gate_factory, *, workers: int = 8,
 
     gates: dict[int, Gate] = {}
     done = [0]
+    failed, succeeded = [0], [0]
+    first_error = [""]
 
     def one(case: EvalCase) -> CaseResult:
         import threading
@@ -84,13 +114,27 @@ def run(cases: list[EvalCase], gate_factory, *, workers: int = 8,
                            money(0), 0.0, 0.0, False, source=case.source,
                            heldout=case.heldout,
                            error=f"{exc.__class__.__name__}: {exc}")
+        if r.consulted:
+            if r.error:
+                failed[0] += 1
+                if not first_error[0]:
+                    first_error[0] = r.error
+            else:
+                succeeded[0] += 1
         done[0] += 1
         if progress and done[0] % 25 == 0:
             progress(done[0], len(work))
         return r
 
+    def check_fail_fast():
+        if fail_fast and succeeded[0] == 0 and failed[0] >= fail_fast:
+            raise AdjudicatorDown(failed[0], first_error[0])
+
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        results = list(pool.map(one, work))
+        results = []
+        for r in pool.map(one, work):
+            results.append(r)
+            check_fail_fast()
 
     # Attach each attacked case's clean-twin verdict, then drop the twins.
     twins = {r.case_id[:-len("__clean")]: r.actual

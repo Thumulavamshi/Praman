@@ -19,7 +19,8 @@ from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
 from praman.data.cases import EvalCase
-from praman.eval.harness import regrade, run, save_run
+from praman.eval.harness import (AdjudicatorDown, regrade, run,
+                                 save_run)
 from praman.eval.metrics import degraded, exception_list, report
 from praman.gate.adjudicator import (LLMAdjudicator, StaticAdjudicator,
                                      prompt_fingerprint)
@@ -203,6 +204,9 @@ def main():
     ap.add_argument("--out", default="",
                     help="default: out/run.json, or out/dev_run.json under --dev")
     ap.add_argument("--regrade")
+    ap.add_argument("--no-fail-fast", action="store_true",
+                    help="run to the end even if every adjudication is failing "
+                         "— for deliberately capturing a degraded run")
     args = ap.parse_args()
     if not args.out:
         args.out = "out/dev_run.json" if args.dev else "out/run.json"
@@ -296,7 +300,29 @@ def main():
     def progress(done, total):
         print(f"  {done}/{total}", flush=True)
 
-    results = run(cases, factory, workers=args.workers, progress=progress)
+    try:
+        results = run(cases, factory, workers=args.workers, progress=progress,
+                      fail_fast=0 if args.no_fail_fast else 5)
+    except AdjudicatorDown as down:
+        W = 78
+        print("\n" + "=" * W)
+        print("!!  ABORTED — THE ADJUDICATOR IS NOT ANSWERING")
+        print("=" * W)
+        print(f"  {down}")
+        print("  Nothing was written. Every case would have come back STEP_UP,")
+        print("  fail-closed, and the run would have looked plausible and")
+        print("  measured nothing.")
+        print()
+        print("  Read the error above before spending more quota. A 429 or")
+        print("  RESOURCE_EXHAUSTED is rate limiting — add keys or lower")
+        print("  PRAMAN_GEMINI_RPM. Anything else is a rejected request: the")
+        print("  key, the model name, or the request shape, and retrying will")
+        print("  fail identically every time.")
+        print()
+        print("  To capture a degraded run deliberately, as evidence of the")
+        print("  fail-closed path:  --no-fail-fast")
+        print("=" * W)
+        return 2
     # The model that answered is recorded with the run, so a report can never
     # quietly inherit a number produced by a different one.
     save_run(ROOT / args.out, results,
