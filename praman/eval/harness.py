@@ -76,9 +76,35 @@ class AdjudicatorDown(RuntimeError):
     def __init__(self, n, error):
         super().__init__(
             f"the first {n} adjudications all failed with the same error, so "
-            f"this run would measure nothing but an outage:\n\n    {error}\n")
+            f"this run would measure nothing but an outage:\n\n    {error}\n"
+            + self.remedy(error))
         self.n = n
         self.error = error
+
+    @staticmethod
+    def remedy(error: str) -> str:
+        """Name the fix when the error is one we can recognise.
+
+        A stack trace is a diagnosis only to whoever already knows the system.
+        These three account for essentially every way this fails in practice,
+        and each needs a different action, so saying which one it is turns the
+        abort from an interruption into an instruction.
+        """
+        e = error.upper()
+        if "API_KEY_INVALID" in e or "API KEY NOT VALID" in e:
+            return ("\n  The key itself is rejected. No amount of retrying or "
+                    "waiting fixes this.\n  Issue a new one at "
+                    "aistudio.google.com/apikey, put it in GEMINI_API_KEYS,\n"
+                    "  and confirm it with:  python tools/check_keys.py\n")
+        if "RESOURCE_EXHAUSTED" in e or "429" in e:
+            return ("\n  Rate limited or out of daily quota. Add keys to "
+                    "GEMINI_API_KEYS, or lower\n  PRAMAN_GEMINI_RPM. "
+                    "python tools/check_keys.py says which keys are spent.\n")
+        if "PERMISSION_DENIED" in e or "403" in e:
+            return ("\n  The key is valid but not allowed to use this model. "
+                    "Check PRAMAN_GEMINI_MODEL\n  and that the Generative "
+                    "Language API is enabled for that project.\n")
+        return ""
 
 
 def run(cases: list[EvalCase], gate_factory, *, workers: int = 8,

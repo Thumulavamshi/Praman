@@ -277,9 +277,23 @@ class GeminiKeyRing:
                 for k in self.keys]
 
     def report(self) -> str:
-        lines = [f"key pool: {self.live}/{len(self.keys)} live on "
-                 f"{self.model or '(model unset)'}, paced at "
-                 f"{self.rpm_per_key * len(self.keys):.0f} calls/min"]
+        # "live" used to mean "not retired for today", which is an optimistic
+        # default: a key that has never worked, and never will, counts as live
+        # until something proves otherwise. A pool of one invalid key therefore
+        # printed "1/1 live" at the top of a run in which every single call was
+        # rejected with API_KEY_INVALID. The word was doing work it had not
+        # earned, and it was the first line an operator reads.
+        #
+        # A key is USABLE when the ring is willing to try it. It is VERIFIED
+        # only once a call through it has come back. Say which is which.
+        verified = sum(1 for kk in self.keys if kk.calls and not kk.failures)
+        head = (f"key pool: {self.live}/{len(self.keys)} usable on "
+                f"{self.model or '(model unset)'}, paced at "
+                f"{self.rpm_per_key * len(self.keys):.0f} calls/min")
+        if not verified:
+            head += "\n  (none verified yet — usable means not retired, not "
+            head += "known good;\n   tools/check_keys.py tests each key for real)"
+        lines = [head]
         for u in self.usage():
             flag = ("  SPENT TODAY on: " + ", ".join(u["spent_models"])
                     if u["spent_models"] else "")
