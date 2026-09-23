@@ -306,8 +306,23 @@ class GeminiKeyRing:
 
 
 def load_keys_from_env() -> list[str]:
-    raw = os.getenv("GEMINI_API_KEYS", "")
-    keys = [k.strip() for k in raw.split(",") if k.strip()]
+    """Keys from GEMINI_API_KEYS, comma separated.
+
+    A JSON-array spelling -- ``["AQ.one","AQ.two"]`` -- is accepted too, because
+    it is an obvious thing to write for a list and there is no ambiguity about
+    what was meant. It only works on ONE line, though, and that is not a
+    limitation this function can lift: python-dotenv ends a value at the
+    newline, so a bracket on its own line arrives here as the single character
+    "[" and the keys were never in the process to begin with. check_keys.py
+    recognises that shape and says so, because the resulting error -- "API key
+    not valid" against a one-character key -- sends you to the API console
+    rather than to your .env.
+    """
+    raw = os.getenv("GEMINI_API_KEYS", "").strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
+    keys = [k.strip().strip('"').strip("'") for k in raw.split(",") if k.strip()]
+    keys = [k for k in keys if k]
     if not keys:
         single = os.getenv("GEMINI_API_KEY", "").strip()
         if single:

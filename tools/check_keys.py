@@ -80,7 +80,18 @@ def describe_source() -> None:
         warn = "   <-- far too short to be a key" if len(k) < 20 else ""
         print(f"    key{i}: {len(k):>3} chars, starts {k[:3]!r}, {shape}{warn}")
 
-    if keys and all(len(k) < 20 for k in keys):
+    if raw.strip() in ("[", "[,", "["):
+        print()
+        print("  That single '[' is a JSON array opened on one line and")
+        print("  continued on the next. python-dotenv ends a value at the")
+        print("  newline, so the keys themselves never entered the process.")
+        print("  Put them all on ONE line, comma separated:")
+        print()
+        print('      GEMINI_API_KEYS="AQ.Ab...one,AQ.Ab...two,AQ.Ab...three"')
+        print()
+        print("  Brackets and quotes around the whole value are fine on one")
+        print("  line; a line break anywhere inside it is not.")
+    elif keys and all(len(k) < 20 for k in keys):
         print()
         print("  Every value here is too short to be an API key. Nothing below")
         print("  will work, and the API's 'key not valid' is telling the truth")

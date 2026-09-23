@@ -330,3 +330,49 @@ def test_an_exhausted_pool_fails_closed_to_step_up_never_to_allow(monkeypatch):
     assert out.verdict == "STEP_UP"
     assert "daily quota" in out.reason
     assert out.error
+
+
+def test_keys_parse_from_the_spellings_people_actually_write(monkeypatch):
+    """Comma separated is the documented form. A JSON array is not, and is an
+    obvious thing to write for a list, so it is accepted rather than silently
+    producing one nonsense key."""
+    from praman.keyring import load_keys_from_env
+    a, b = "AQ.Ab8" + "a" * 30, "AQ.Ab8" + "b" * 30
+
+    for spelling in (f"{a},{b}",
+                     f" {a} , {b} ",
+                     f'["{a}","{b}"]',
+                     f'[ "{a}", "{b}" ]',
+                     f"['{a}','{b}']"):
+        monkeypatch.setenv("GEMINI_API_KEYS", spelling)
+        assert load_keys_from_env() == [a, b], spelling
+
+
+def test_a_json_array_broken_over_lines_yields_the_bracket_not_a_key(monkeypatch):
+    """The failure that cost a day, pinned so it stays diagnosable.
+
+    python-dotenv ends a value at the newline, so a .env written as
+
+        GEMINI_API_KEYS=[
+          "AQ...",
+        ]
+
+    hands this function the single character "[". No parsing here can recover
+    the keys -- they never entered the process. What matters is that the result
+    is visibly junk rather than something that looks like a key, so
+    check_keys.py can say what happened instead of the API saying "key not
+    valid" about a one-character string.
+    """
+    from praman.keyring import load_keys_from_env
+    monkeypatch.setenv("GEMINI_API_KEYS", "[")
+    keys = load_keys_from_env()
+    assert keys == ["["]
+    assert len(keys[0]) < 20
+
+
+def test_an_empty_or_bracket_only_value_does_not_crash(monkeypatch):
+    from praman.keyring import load_keys_from_env
+    for junk in ("", "   ", "[]", "[,]", ",,,"):
+        monkeypatch.setenv("GEMINI_API_KEYS", junk)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        assert load_keys_from_env() == [], junk
