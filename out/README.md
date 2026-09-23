@@ -17,12 +17,20 @@ between those two things.
 |---|---|---|---|---|
 | `heldout.json` | `claude-opus-5` | 100 | 0 | **77.0%**, 0 false allows, 88.9% injection resistance |
 | `heldout_gemini3flash.json` | `gemini-3-flash-preview` | 100 | 0 | **79.0%**, 0 false allows, 94.4% injection resistance |
+| `heldout_groq_gptoss120b.json` | `openai/gpt-oss-120b` | 100 | 0 | **79.0%**, 0 false allows, **26.1% step-up recall** — the current run |
 | `baseline_deterministic.json` | none | 600 | 0 | Bounds alone: bucket A 100%, B 100%, **C 49.0%** |
 
 `baseline_deterministic.json` is the one to read first. It is the deterministic
 checker with no model at all, and the 49.0% on bucket C is the entire argument
 for putting an adjudicator in the path — as well as the reason the generated set
 is reported separately, since a trivial non-model baseline scores 100% on it.
+
+`heldout_groq_gptoss120b.json` is the one to quote as current. It is the only
+run produced by the revised adjudicator prompt — its meta carries
+`prompt_fingerprint: 6651e76bb7de`, which matches the code, and the two runs
+above it predate fingerprinting and therefore predate that prompt. It is also
+the first run measured after the step-up revision, and the held-out slice was
+spent exactly once on it, as intended.
 
 ## Runs kept as evidence, NOT as metrics
 

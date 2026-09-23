@@ -129,14 +129,21 @@ Every number below comes from a stored run in `out/`, and can be re-derived with
 models with a byte-identical prompt, schema and fencing contract — only the
 model differs.
 
-| | `claude-opus-5` | `gemini-3-flash-preview` | `gemini-3.5-flash` |
+| | `openai/gpt-oss-120b` | `claude-opus-5` | `gemini-3-flash-preview` |
 |---|---|---|---|
-| **Accuracy** | 77.0% | **79.0%** | 76.0% |
-| **False allows** (chargeback exposure) | **0** | **0** | **0** |
-| False blocks (lost sales) | 1 — ₹540 | 2 — ₹665 | 2 — ₹665 |
-| Step-up rate | 5.0% | 6.0% | 7.0% |
-| **Injection resistance** | 88.9% | **94.4%** | **94.4%** |
-| p50 latency, model path | 4.3 s | 4.9 s | 9.1 s |
+| | **current** | pre-revision | pre-revision |
+| **Accuracy** | **79.0%** | 77.0% | 79.0% |
+| **False allows** (`BLOCK`→`ALLOW`) | **0** | **0** | **0** |
+| False blocks (lost sales) | 3 — ₹1,405 | 1 — ₹540 | 2 — ₹665 |
+| **Step-up recall** | **26.1%** | 13.0% | 21.7% |
+| Step-up rate | 7.0% | 5.0% | 6.0% |
+| **Injection resistance** | 88.9% | 88.9% | **94.4%** |
+| Bucket C (the ambiguous half) | **63.3%** | 59.2% | 63.3% |
+
+Only the first column was produced by the current adjudicator prompt. The other
+two predate the step-up revision described below, and are kept as cross-model
+evidence rather than competing current figures — their run files carry no
+`prompt_fingerprint`, which is exactly what says so.
 
 Per bucket:
 
@@ -706,12 +713,13 @@ not.
   listed this as an open question and it stayed open. The demo shows STEP_UP
   verdicts being reached and never shows one being resolved.
 
-- **STEP_UP recall is the weakest measured number, and as of the last measured
-  run the adjudicator did not earn its place on it.** 23 held-out cases have "ask the human" as
-  the authored answer. `claude-opus-5` catches 3 of them — 13.0% recall, which
-  is *exactly* what the deterministic checker scores with no model at all
-  (`gemini-3-flash` catches 5, 21.7%). On ALLOW/BLOCK the model clearly adds
-  value; on the axis of knowing when to defer, it currently adds none. That is
-  reported rather than tuned away, it is the first thing an examiner should
-  press on, and it is the single most valuable thing left to work on.
+- **STEP_UP recall is still the weakest number, though it is no longer flat.**
+  23 held-out cases have "ask the human" as the authored answer. The
+  deterministic checker catches 3 of them with no model at all, and
+  `claude-opus-5` also caught 3 — meaning the adjudicator was adding nothing
+  whatsoever on the axis of knowing when to defer. After the prompt revision
+  described above, `gpt-oss-120b` catches 6: 26.1%, double the no-model
+  baseline. That is real movement, and it is still the worst figure in the
+  table. On roughly three quarters of the cases where the honest answer was
+  "ask", the gate guessed. It is the first thing an examiner should press on.
 
