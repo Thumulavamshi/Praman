@@ -118,20 +118,30 @@ class GroqAdjudicator:
         self._json_schema_ok = True
 
     def _create(self, client, prompt: str, use_schema: bool):
-        fmt = ({"type": "json_schema", "json_schema": _schema()} if use_schema
-               else {"type": "json_object"})
+        if use_schema:
+            fmt = {"type": "json_schema", "json_schema": _schema()}
+            # The schema is already in response_format; repeating it in the
+            # message body spends ~310 tokens a case to say the same thing
+            # twice, and on a free tier the binding limit is tokens per minute
+            # rather than requests. Over a 118-case run that is ~37k tokens
+            # bought for nothing.
+            user = prompt
+        else:
+            # The json_object format has no schema field, so the shape has to
+            # be stated in the message -- and that format additionally requires
+            # the word JSON to appear somewhere in the messages at all.
+            fmt = {"type": "json_object"}
+            user = (f"{prompt}\n\nAnswer with JSON matching this schema:\n"
+                    f"{json.dumps(Adjudication.model_json_schema())}")
         return client.chat.completions.create(
             model=self.model,
             messages=[
+                # SYSTEM_PROMPT stays byte-identical to the other providers'.
+                # Anything this adjudicator needs to add goes in the user turn,
+                # because a prompt that differs per provider makes the three
+                # sets of numbers incomparable.
                 {"role": "system", "content": SYSTEM_PROMPT},
-                # The json_object format requires the word JSON somewhere in the
-                # messages, and the schema path is happier for being told the
-                # shape as well. Saying it here rather than in SYSTEM_PROMPT
-                # keeps that prompt byte-identical across providers, which is
-                # the whole reason the numbers are comparable.
-                {"role": "user", "content":
-                    f"{prompt}\n\nAnswer with JSON matching this schema:\n"
-                    f"{json.dumps(Adjudication.model_json_schema())}"},
+                {"role": "user", "content": user},
             ],
             response_format=fmt,
             max_completion_tokens=self.max_tokens,

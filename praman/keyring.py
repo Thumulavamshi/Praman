@@ -66,6 +66,11 @@ _DAILY_MARKERS = ("perday", "per day", "requests per day", "daily limit",
 # STEP_UP. Correct behaviour, wasted measurement.
 _TRANSIENT_SERVER_CODES = (500, 502, 503, 504)
 
+# A server that says "come back in an hour" is telling you the day is over, not
+# asking you to sleep through it. Cap what we will honour; beyond this the
+# daily-exhaustion path is the right answer.
+_MAX_TOLD_DELAY = 120.0
+
 
 def _transport_errors() -> tuple:
     """Connection-level failures worth retrying, if httpx is importable.
@@ -92,6 +97,29 @@ def next_pacific_midnight(now: datetime | None = None) -> datetime:
     return tomorrow.astimezone(timezone.utc)
 
 
+def _limit_kind(message: str) -> str:
+    """Name the limit the provider says was hit.
+
+    "rate limited" alone leaves the only useful question unanswered: requests
+    per minute, or tokens per minute? They need opposite fixes. Fewer requests
+    per minute solves the first and does nothing for the second, where the lever
+    is a shorter prompt, a smaller model, or simply fewer workers -- and a pool
+    paced perfectly for RPM will still collect 429s all day on TPM.
+
+    Providers say which in the 429 body. Repeat it rather than flattening it.
+    """
+    m = (message or "").lower()
+    if "tokens per minute" in m or "tpm" in m:
+        return " (tokens per minute)"
+    if "tokens per day" in m or "tpd" in m:
+        return " (tokens per day)"
+    if "requests per minute" in m or "rpm" in m:
+        return " (requests per minute)"
+    if "requests per day" in m or "rpd" in m:
+        return " (requests per day)"
+    return ""
+
+
 def looks_like_daily_exhaustion(message: str) -> bool:
     m = (message or "").lower()
     return any(marker in m for marker in _DAILY_MARKERS)
@@ -109,6 +137,16 @@ def retry_delay_from(message: str) -> float | None:
     m = re.search(r"'retryDelay':\s*'(\d+(?:\.\d+)?)s'", message or "")
     if not m:
         m = re.search(r"retry in (\d+(?:\.\d+)?)s", message or "", re.I)
+    if not m:
+        # Groq phrases it as "Please try again in 1.23s" -- and sometimes in
+        # minutes-and-seconds, "try again in 2m30.5s". Same principle as
+        # Google's retryDelay: the server knows when its window reopens and
+        # guessing at it either burns another rejection or wastes the wait.
+        m = re.search(r"try again in (?:(\d+)m)?(\d+(?:\.\d+)?)s",
+                      message or "", re.I)
+        if m:
+            mins = float(m.group(1) or 0)
+            return min(mins * 60 + float(m.group(2)), _MAX_TOLD_DELAY)
     if not m:
         return None
     try:
@@ -459,7 +497,8 @@ def call_with_rotation(ring: GeminiKeyRing, fn, *, max_attempts: int | None = No
                      if told is not None
                      else min(2 ** attempt, 30) * (0.5 + random.random()))
             if on_retry:
-                on_retry(state, ("rate limited" if rate_limited
+                on_retry(state, ("rate limited" + _limit_kind(message)
+                                 if rate_limited
                                  else f"model overloaded ({code})")
                          + f"; backing off {delay:.1f}s")
             time.sleep(delay)
