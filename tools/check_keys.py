@@ -16,6 +16,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+# Captured BEFORE load_dotenv, because python-dotenv does not override a
+# variable the process already has. A stale GEMINI_API_KEYS exported in a shell
+# profile silently wins over the .env you are editing, and every symptom points
+# at the keys rather than at the shadowing. Knowing which source won is the
+# difference between a five-second fix and another wasted run.
+_PRE = {k: os.getenv(k) for k in ("GEMINI_API_KEYS", "GEMINI_API_KEY")}
+
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
@@ -28,6 +36,58 @@ def mask(k: str) -> str:
     return f"{k[:6]}...{k[-4:]}" if len(k) > 12 else "(short)"
 
 
+def describe_source() -> None:
+    """Say what was loaded and where it came from. Never prints a key."""
+    env_path = ROOT / ".env"
+    raw = os.getenv("GEMINI_API_KEYS", "")
+    keys = load_keys_from_env()
+
+    print("where the keys came from")
+    print("-" * 74)
+
+    shadowed = [k for k, v in _PRE.items() if v]
+    if shadowed:
+        print(f"  !! {', '.join(shadowed)} was ALREADY set in this shell before "
+              f".env was read.")
+        print(f"     python-dotenv does not override an existing variable, so "
+              f"the value in")
+        print(f"     {env_path.name} was ignored entirely. Unset it and run "
+              f"again:")
+        for k in shadowed:
+            print(f"         Remove-Item Env:{k}          # PowerShell")
+            print(f"         unset {k}                    # bash")
+    else:
+        print(f"  .env at {env_path}"
+              f"{'' if env_path.exists() else '   (MISSING)'}")
+
+    # How many entries does the file itself declare? If the file says six and
+    # the process sees one, the file is not what is being used.
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("GEMINI_API_KEYS"):
+                val = line.split("=", 1)[-1].strip().strip('"').strip("'")
+                n = len([x for x in val.split(",") if x.strip()])
+                print(f"  .env declares {n} key(s) on the GEMINI_API_KEYS line")
+                break
+        else:
+            print("  .env has no GEMINI_API_KEYS line")
+
+    print(f"  this process sees  {len(keys)} key(s), "
+          f"{len(raw)} characters of raw value")
+    for i, k in enumerate(keys, 1):
+        shape = "AQ.Ab auth key" if k.startswith("AQ.") else (
+            "AIza standard key" if k.startswith("AIza") else "unrecognised shape")
+        warn = "   <-- far too short to be a key" if len(k) < 20 else ""
+        print(f"    key{i}: {len(k):>3} chars, starts {k[:3]!r}, {shape}{warn}")
+
+    if keys and all(len(k) < 20 for k in keys):
+        print()
+        print("  Every value here is too short to be an API key. Nothing below")
+        print("  will work, and the API's 'key not valid' is telling the truth")
+        print("  about the string it was handed. Fix the source above first.")
+    print()
+
+
 def _sdk_version() -> str:
     import importlib.metadata as md
     try:
@@ -37,6 +97,10 @@ def _sdk_version() -> str:
 
 
 def main():
+    # Before anything else, including the no-keys bail-out. An empty pool is
+    # precisely when you need to be told which source was consulted.
+    describe_source()
+
     keys = load_keys_from_env()
     if not keys:
         print("no keys found. Set GEMINI_API_KEYS in .env as a comma-separated "
