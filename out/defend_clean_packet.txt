@@ -1,0 +1,59 @@
+==============================================================================
+PHASE 5 — DISPUTE DEFENDER   [scenario: clean]
+==============================================================================
+
+  The cardholder says: "I didn't authorize that, my agent did."
+  payment pay_db5b5f8f4d3e27   chargeback cb_f0a834c3d6f5
+
+Direct use of automatic function calling (AFC) in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream. Similarly, direct use of AFC in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message.
+------------------------------------------------------------------------------
+  the agent's investigation:
+    mandate_chain      found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    decision_record    found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    proposed_cart      found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    money_trail        found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    integrity_check    found      {}
+------------------------------------------------------------------------------
+
+investigation: 5 tool calls, 13.5s, gemini-3-flash-preview
+REPRESENTMENT PACKET
+==========================================================================
+payment            pay_db5b5f8f4d3e27
+chargeback         cb_f0a834c3d6f5
+recommended        REPRESENT
+citations verified 10/10  (100%)
+
+SUMMARY
+--------------------------------------------------------------------------
+An AI agent purchased groceries (wheat flour and milk) for INR 357.00 under a mandate granted by the cardholder. The record is complete and the integrity check confirms that the transaction was processed according to the cardholder's active delegation rules.
+
+FACTS, EACH CHECKED AGAINST THE RECORD IT CITES
+--------------------------------------------------------------------------
+  [ok] The cardholder delegated purchasing authority to an AI agent.
+       agent_claude_shopper_v1   [mandate mnd_reference]
+  [ok] The mandate explicitly permits purchases in the grocery category.
+       groceries   [mandate mnd_reference]
+  [ok] The single order limit set by the cardholder is two thousand rupees.
+       2000.00   [mandate mnd_reference]
+  [ok] The transaction amount was within the cardholder's defined limits.
+       357.00   [ledger ev_cap_pay_db5b5f8f4d3e27]
+  [ok] The gate decision system confirmed the transaction passed all mandate bounds.
+       PASS   [decision dec_0b2a2c19ece0447a]
+  [ok] The gate decision system formally allowed the purchase to proceed.
+       ALLOW   [decision dec_0b2a2c19ece0447a]
+  [ok] The cryptographic integrity of the decision chain has been verified.
+       true   [integrity integrity]
+  [ok] The event log integrity has been verified.
+       true   [integrity integrity]
+  [ok] The mandate was active and not revoked at the time of purchase.
+       false   [mandate mnd_reference]
+  [ok] The items purchased were registered under the 'groceries' category.
+       groceries   [event prop_GRO-0001_GRO-0006]
+
+ARGUMENT
+--------------------------------------------------------------------------
+The cardholder's claim that they did not personally click 'buy' is understood, but the transaction is valid because it was executed by an AI agent under a legally binding and active delegation of authority. The merchant has provided evidence that the purchase of groceries (Aashirvaad Atta and Amul Milk) totaling INR 357.00 fell squarely within the 'per_transaction_cap' of 2000.00 and the 'groceries' category permitted by the cardholder in mandate mnd_reference. The transaction was processed after the automated gate decision (dec_0b2a2c19ece0447a) verified these bounds. As the merchant can prove the purchase was within the scope of authority the cardholder themselves delegated, the merchant is entitled to the funds.
+
+WEAKNESSES AN ISSUER WILL ATTACK
+--------------------------------------------------------------------------
+  - The merchant description for the items in the proposal is blank, though titles and categories are clearly defined.

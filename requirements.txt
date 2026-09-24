@@ -1,0 +1,17 @@
+anthropic>=1.3.0
+# 2.24+: Gemini keys issued by AI Studio are now Auth keys (the AQ.Ab
+# prefix) rather than Standard keys (AIza), and older releases of this
+# SDK reject them -- reported against 2.8, 2.18 and 2.20 as either
+# API_KEY_INVALID or 401 ACCESS_TOKEN_TYPE_UNSUPPORTED. >=2.0 let a
+# build resolve to one of those and fail with an error that reads like
+# a bad key rather than a stale dependency.
+google-genai>=2.24
+groq>=1.7
+pydantic>=2.13
+fastapi>=0.141
+uvicorn[standard]>=0.52
+cryptography>=45
+python-dotenv>=1.1
+razorpay>=2.0.1
+mcp>=2.2
+pytest>=8

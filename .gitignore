@@ -1,1 +1,33 @@
+# Secrets — never commit
 .env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Praman working output
+datasets/generated/
+
+# out/ is NOT ignored. A stored run is evidence, not working output: the
+# README quotes numbers from these files, and a number whose run cannot be
+# re-graded is a number nobody can check. tools/run_eval.py --regrade reads
+# them, so they are the difference between a published figure and a claim.
+# Logs are transient, though, and a run's own .json carries what matters.
+out/*.log
+
+# Eval scratch. run_eval writes out/run.json by default and rotates the previous
+# one aside on every run, so a week of debugging leaves a drift of dated files
+# next to the curated runs that the README actually cites. The curated ones --
+# heldout*.json, baseline_deterministic.json, the defend_* packets -- are named
+# deliberately and stay tracked.
+out/run.json
+out/run.*.json
+out/dev_run.json
+out/dev_run.*.json

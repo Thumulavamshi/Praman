@@ -1,0 +1,59 @@
+==============================================================================
+PHASE 5 — DISPUTE DEFENDER   [scenario: tampered]
+==============================================================================
+
+  The cardholder says: "I didn't authorize that, my agent did."
+  payment pay_db5b5f8f4d3e27   chargeback cb_393276cbfea7
+
+Direct use of automatic function calling (AFC) in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream. Similarly, direct use of AFC in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message.
+------------------------------------------------------------------------------
+  the agent's investigation:
+    mandate_chain      found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    decision_record    found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    proposed_cart      found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    money_trail        found      {'payment_id': 'pay_db5b5f8f4d3e27'}
+    integrity_check    found      {}
+------------------------------------------------------------------------------
+
+investigation: 5 tool calls, 16.8s, gemini-3-flash-preview
+REPRESENTMENT PACKET
+==========================================================================
+payment            pay_db5b5f8f4d3e27
+chargeback         cb_393276cbfea7
+recommended        ESCALATE
+citations verified 9/9  (100%)
+
+SUMMARY
+--------------------------------------------------------------------------
+A purchase of groceries totalling 357.00 was made by the cardholder's designated AI agent, agent_claude_shopper_v1. While the AI decision chain is intact, the underlying event log for this merchant's record fails integrity verification.
+
+FACTS, EACH CHECKED AGAINST THE RECORD IT CITES
+--------------------------------------------------------------------------
+  [ok] The cardholder delegated purchasing authority to an AI agent.
+       agent_claude_shopper_v1   [mandate mnd_reference]
+  [ok] The mandate explicitly permits the purchase of grocery items.
+       groceries   [mandate mnd_reference]
+  [ok] The AI agent's mandate for single orders is capped at two thousand rupees.
+       2000.00   [mandate mnd_reference]
+  [ok] The gatekeeper evaluated the transaction against the mandate and issued an allow verdict.
+       ALLOW   [decision dec_7ddfcf418c584ae4]
+  [ok] The specific transaction amount evaluated by the gatekeeper was 357.00.
+       357.00   [decision dec_7ddfcf418c584ae4]
+  [ok] The purchase consisted of grocery items including wheat atta and milk.
+       groceries   [event prop_GRO-0001_GRO-0006]
+  [ok] The total amount captured from the card was 357.00.
+       357.00   [ledger ev_cap_pay_db5b5f8f4d3e27]
+  [ok] The event log failed its integrity check.
+       false   [integrity integrity]
+  [ok] The first recorded integrity failure occurs at the proposal stage.
+       ev_prop_prop_GRO-0001_GRO-0006   [integrity integrity]
+
+ARGUMENT
+--------------------------------------------------------------------------
+The merchant cannot currently defend this charge because the event log failed its integrity verification (event_log_verified: false). Specifically, the record for the original purchase proposal (ev_prop_prop_GRO-0001_GRO-0006) does not match the expected hash in the chain. Although the AI agent's mandate (mnd_reference) appears to cover this transaction of 357.00 for groceries, the merchant's ledger and event history are mathematically inconsistent. We are escalating this for manual review to determine if the record was tampered with or if a technical synchronization error occurred before proceeding with representment.
+
+WEAKNESSES AN ISSUER WILL ATTACK
+--------------------------------------------------------------------------
+  - The event log failed integrity verification, meaning the sequence of events cannot be trusted.
+  - The specific event that triggered the integrity failure is the purchase proposal itself.
+  - The cardholder's claim of non-authorization is technically true as they delegated the action, but the merchant cannot prove the agent acted on a valid, untampered proposal.
